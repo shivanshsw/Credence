@@ -11,7 +11,7 @@ import {
 import { ChatInput } from "@/components/chat/chat-input"
 import { useEffect, useRef, useState } from "react"
 import { useAuth } from "@/components/auth-context"
-import { useSearchParams } from "next/navigation"
+import { useSearchParams, useRouter } from "next/navigation" // 1. Import useRouter
 import SecurityPanel from "@/components/security-panel"
 import SettingsPanel from "@/components/settings-panel"
 import GroupGate from "@/components/groups/group-gate"
@@ -33,27 +33,16 @@ export default function Page() {
     { kind: "perm", state: "ask" },
   ])
 
-  const { loggedIn, loading, login, selectedGroupId, groups, selectGroup } = useAuth()
+  // 2. The mock 'login' function is no longer needed from the context
+  const { loggedIn, loading, selectedGroupId } = useAuth()
   const search = useSearchParams()
+  const router = useRouter() // 3. Get the router instance
   const view = search.get("view")
-  const groupParam = search.get("group")
 
-  // This state is the key to fixing hydration errors
   const [isClient, setIsClient] = useState(false)
-
-  // This useEffect runs only in the browser, after the initial render
   useEffect(() => {
     setIsClient(true)
   }, [])
-
-  useEffect(() => {
-    if (!groupParam || !isClient) return
-    if (selectedGroupId === groupParam) return
-    const exists = groups?.some((g) => g.id === groupParam)
-    if (exists) {
-      selectGroup(groupParam)
-    }
-  }, [groupParam, groups, selectedGroupId, selectGroup, isClient])
 
   const listRef = useRef<HTMLDivElement | null>(null)
   const [typing, setTyping] = useState(false)
@@ -103,71 +92,74 @@ export default function Page() {
     return "Acknowledged. I’m on it. I’ll follow up with details shortly."
   }
 
+
+  // This check ensures we don't try to render client-side logic on the server
+  if (!isClient) {
+    return null; // Or a loading skeleton
+  }
+
+  // Once the client has mounted, we can render the correct UI
   return (
       <AppShell>
-        {/* This check is crucial. It ensures the server renders nothing, and the client
-          renders the UI only after it has mounted, preventing any mismatch. */}
-        {isClient ? (
-            <>
-              {loggedIn && !selectedGroupId ? (
-                  <GroupGate />
-              ) : view === "security" ? (
-                  <SecurityPanel />
-              ) : view === "settings" ? (
-                  <SettingsPanel />
-              ) : (
-                  <section
-                      aria-labelledby="chat-title"
-                      className="relative flex h-[calc(100vh-120px)] flex-col rounded-md border border-neutral-800 bg-neutral-950/50"
-                  >
-                    <header className="flex items-center justify-between border-b border-neutral-800 px-4 py-3">
-                      <h1 id="chat-title" className="text-pretty text-sm font-semibold">MCP Agent</h1>
-                      <div className="flex items-center gap-2 text-xs text-neutral-400">
-                        <span className="h-2 w-2 animate-pulse rounded-full bg-teal-500" aria-hidden="true" />
-                        Online
-                      </div>
-                    </header>
-                    <div className="flex min-h-0 flex-1 flex-col gap-3 p-3">
-                      <div
-                          ref={listRef}
-                          className={
-                              "flex-1 min-h-0 overflow-y-auto rounded-md border border-neutral-900 bg-black p-3 " +
-                              (!loggedIn ? "pointer-events-none select-none opacity-70 [filter:blur(2px)]" : "")
-                          }
-                      >
-                        <div className="space-y-3">
-                          {messages.map((m, i) => {
-                            if (m.kind === "msg") return <ChatMessage key={i} role={m.role}>{m.content}</ChatMessage>;
-                            if (m.kind === "tool") return <ToolOutput key={i} title={m.title}>{m.body}</ToolOutput>;
-                            if (m.kind === "perm") {
-                              if (m.state === "ask") return <PermissionRequest key={i} onRequest={triggerManagerFlow} />;
-                              if (m.state === "manager") return <ManagerApproval key={i} employee="kranson" tool="cashflow" onGrant={grantPermission} onDeny={denyPermission}/>;
-                              return <ChatMessage key={i} role="assistant">Access granted for cashflow. Try: “open cashflow analyzer dashboard”.</ChatMessage>;
-                            }
-                            return null
-                          })}
-                          {loggedIn && typing ? <TypingIndicator className="mt-1" /> : null}
-                        </div>
-                      </div>
-                      <div className={!loggedIn ? "pointer-events-none opacity-70 [filter:blur(1.5px)]" : ""}>
-                        <ChatInput onSend={addUserText} />
-                      </div>
+        {loggedIn && !selectedGroupId ? (
+            <GroupGate />
+        ) : view === "security" ? (
+            <SecurityPanel />
+        ) : view === "settings" ? (
+            <SettingsPanel />
+        ) : (
+            <section
+                aria-labelledby="chat-title"
+                className="relative flex h-[calc(100vh-120px)] flex-col rounded-md border border-neutral-800 bg-neutral-950/50"
+            >
+              <header className="flex items-center justify-between border-b border-neutral-800 px-4 py-3">
+                <h1 id="chat-title" className="text-pretty text-sm font-semibold">MCP Agent</h1>
+                <div className="flex items-center gap-2 text-xs text-neutral-400">
+                  <span className="h-2 w-2 animate-pulse rounded-full bg-teal-500" aria-hidden="true" />
+                  Online
+                </div>
+              </header>
+              <div className="flex min-h-0 flex-1 flex-col gap-3 p-3">
+                <div
+                    ref={listRef}
+                    className={
+                        "flex-1 min-h-0 overflow-y-auto rounded-md border border-neutral-900 bg-black p-3 " +
+                        (!loggedIn ? "pointer-events-none select-none opacity-70 [filter:blur(2px)]" : "")
+                    }
+                >
+                  <div className="space-y-3">
+                    {messages.map((m, i) => {
+                      if (m.kind === "msg") return <ChatMessage key={i} role={m.role}>{m.content}</ChatMessage>;
+                      if (m.kind === "tool") return <ToolOutput key={i} title={m.title}>{m.body}</ToolOutput>;
+                      if (m.kind === "perm") {
+                        if (m.state === "ask") return <PermissionRequest key={i} onRequest={triggerManagerFlow} />;
+                        if (m.state === "manager") return <ManagerApproval key={i} employee="kranson" tool="cashflow" onGrant={grantPermission} onDeny={denyPermission}/>;
+                        return <ChatMessage key={i} role="assistant">Access granted for cashflow. Try: “open cashflow analyzer dashboard”.</ChatMessage>;
+                      }
+                      return null
+                    })}
+                    {loggedIn && typing ? <TypingIndicator className="mt-1" /> : null}
+                  </div>
+                </div>
+                <div className={!loggedIn ? "pointer-events-none opacity-70 [filter:blur(1.5px)]" : ""}>
+                  <ChatInput onSend={addUserText} />
+                </div>
+              </div>
+              {!loggedIn && (
+                  <div aria-live="polite" className="absolute inset-0 z-10 grid place-items-center bg-black/60 backdrop-blur-sm">
+                    <div className="rounded-md border border-neutral-800 bg-neutral-950 p-6 text-center shadow">
+                      <p className="text-sm text-neutral-300">Welcome to FINCORP MCP</p>
+                      <h2 className="mt-1 text-pretty text-lg font-semibold">Sign in to start chatting</h2>
+                      {/* 4. This now correctly navigates to your dedicated sign-in page */}
+                      <button type="button" onClick={() => router.push('/sign-in')} className="mt-4 inline-flex items-center justify-center rounded-md bg-teal-500 px-4 py-2 text-sm font-semibold text-black transition hover:bg-teal-400 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-400 disabled:opacity-60" disabled={loading}>
+                        {loading ? "Loading..." : "Sign In / Sign Up"}
+                      </button>
                     </div>
-                    {!loggedIn && (
-                        <div aria-live="polite" className="absolute inset-0 z-10 grid place-items-center bg-black/60 backdrop-blur-sm">
-                          <div className="rounded-md border border-neutral-800 bg-neutral-950 p-6 text-center shadow">
-                            <p className="text-sm text-neutral-300">Welcome to FINCORP MCP</p>
-                            <h2 className="mt-1 text-pretty text-lg font-semibold">Sign in to start chatting</h2>
-                            <button type="button" onClick={login} className="mt-4 inline-flex items-center justify-center rounded-md bg-teal-500 px-4 py-2 text-sm font-semibold text-black transition hover:bg-teal-400 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-400 disabled:opacity-60" disabled={loading}>
-                              {loading ? "Signing in…" : "Sign In / Sign Up"}
-                            </button>
-                          </div>
-                        </div>
-                    )}
-                  </section>
+                  </div>
               )}
-            </>
-        ) : null}
+            </section>
+        )}
       </AppShell>
   )
 }
+

@@ -1,126 +1,107 @@
-"use client"
+"use client";
 
-import { createContext, useContext, useState, useCallback, useMemo, type ReactNode } from "react"
-import { useEffect } from "react"
+import React, { createContext, useContext, useEffect, useState } from 'react';
+import { useSession, useUser, useDescope } from '@descope/nextjs-sdk/client';
 
-type Group = { id: string; name: string; members: number }
+// Define the shape of your data from the database
+type User = {
+  name?: string;
+  email?: string;
+};
 
-type AuthContextValue = {
-  loggedIn: boolean
-  loading: boolean
-  login: () => Promise<void>
-  logout: () => void
-  groups: Group[]
-  selectedGroupId: string | null
-  selectGroup: (id: string) => void
-  createGroup: (g: Group) => void
-  addMembers: (id: string, emails: string[]) => void // add members helper
+type Group = {
+  id: string;
+  name: string;
+};
+
+interface AuthContextType {
+  user: User | null;
+  loggedIn: boolean;
+  loading: boolean;
+  logout: () => Promise<void>;
+  groups: Group[];
+  selectedGroupId: string | null;
+  selectGroup: (groupId: string | null) => void;
+  createGroup: (name: string) => Promise<string | null>; // FIX: Changed to return the new group's ID or null
+  addMembers: (groupId: string, emails: string[]) => void;
 }
 
-const AuthContext = createContext<AuthContextValue | undefined>(undefined)
+const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
-const LS = {
-  loggedIn: "demo_logged_in",
-  groups: "demo_groups",
-  selectedGroup: "demo_selected_group_id",
-}
+export function AuthProvider({ children }: { children: React.ReactNode }) {
+  const { isAuthenticated, isSessionLoading } = useSession();
+  const { user: descopeUser, isUserLoading } = useUser();
+  const sdk = useDescope();
 
-function readJSON<T>(key: string, fallback: T): T {
-  try {
-    const raw = typeof window !== "undefined" ? sessionStorage.getItem(key) : null
-    return raw ? (JSON.parse(raw) as T) : fallback
-  } catch {
-    return fallback
-  }
-}
-
-export function AuthProvider({ children }: { children: ReactNode }) {
-  const [loggedIn, setLoggedIn] = useState<boolean>(() => {
-    if (typeof window === "undefined") return false
-    return sessionStorage.getItem(LS.loggedIn) === "1"
-  })
-  const [loading, setLoading] = useState(false)
-  const [groups, setGroups] = useState<Group[]>(() => readJSON<Group[]>(LS.groups, []))
-  const [selectedGroupId, setSelectedGroupId] = useState<string | null>(() => {
-    if (typeof window === "undefined") return null
-    return sessionStorage.getItem(LS.selectedGroup) || null
-  })
+  const [groups, setGroups] = useState<Group[]>([]);
+  const [selectedGroupId, setSelectedGroupId] = useState<string | null>(null);
 
   useEffect(() => {
-    try {
-      sessionStorage.setItem(LS.loggedIn, loggedIn ? "1" : "0")
-    } catch {}
-  }, [loggedIn])
+    if (isAuthenticated) {
+      fetch('/api/auth/sync', { method: 'POST' });
+      fetch('/api/groups')
+          .then(res => res.json())
+          .then((data: Group[]) => {
+            if (Array.isArray(data)) {
+              setGroups(data);
+            }
+          })
+          .catch(err => console.error("Failed to fetch groups:", err));
+    } else {
+      setGroups([]);
+      setSelectedGroupId(null);
+    }
+  }, [isAuthenticated]);
 
-  useEffect(() => {
-    try {
-      sessionStorage.setItem(LS.groups, JSON.stringify(groups))
-    } catch {}
-  }, [groups])
+  const logout = async () => {
+    await sdk.logout();
+  };
 
-  useEffect(() => {
-    try {
-      if (selectedGroupId) sessionStorage.setItem(LS.selectedGroup, selectedGroupId)
-      else sessionStorage.removeItem(LS.selectedGroup)
-    } catch {}
-  }, [selectedGroupId])
+  // FIX: This function now returns the ID of the new group on success
+  const createGroup = async (name: string): Promise<string | null> => {
+    const response = await fetch('/api/groups', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name }),
+    });
 
-  const login = useCallback(async () => {
-    setLoading(true)
-    await new Promise((r) => setTimeout(r, 900))
-    setLoggedIn(true)
-    setLoading(false)
-  }, [])
+    if (response.ok) {
+      const newGroup: Group = await response.json();
+      setGroups(prev => [...prev, newGroup]);
+      return newGroup.id; // Return the ID
+    } else {
+      console.error("Failed to create group");
+      return null; // Return null on failure
+    }
+  };
 
-  const logout = useCallback(() => {
-    setLoggedIn(false)
-    setLoading(false)
-    setSelectedGroupId(null)
-    // keep groups list around for demo; remove next line to also clear it
-    // setGroups([])
-  }, [])
+  // Placeholder for the "Add Members" functionality
+  const addMembers = (groupId: string, emails: string[]) => {
+    console.log(`Adding members to group ${groupId}:`, emails);
+    // Here you would typically make another API call to a new endpoint
+    // For example: POST /api/groups/${groupId}/members
+  };
 
-  const selectGroup = useCallback((id: string) => {
-    setSelectedGroupId(id)
-  }, [])
+  const value: AuthContextType = {
+    loggedIn: isAuthenticated,
+    loading: isSessionLoading || isUserLoading,
+    user: descopeUser ? { name: descopeUser.name, email: descopeUser.email } : null,
+    logout,
+    groups,
+    selectedGroupId,
+    selectGroup: setSelectedGroupId,
+    createGroup,
+    addMembers, // FIX: The function is now correctly provided
+  };
 
-  const createGroup = useCallback((g: Group) => {
-    setGroups((prev) => [...prev, g])
-  }, [])
-
-  const addMembers = useCallback((id: string, emails: string[]) => {
-    const delta = emails.filter((e) => e.trim().length > 0).length
-    if (delta === 0) return
-    setGroups((prev) => prev.map((g) => (g.id === id ? { ...g, members: g.members + delta } : g)))
-  }, [])
-
-  const value = useMemo(
-    () => ({
-      loggedIn,
-      loading,
-      login,
-      logout,
-      groups,
-      selectedGroupId,
-      selectGroup,
-      createGroup,
-      addMembers, // expose addMembers
-    }),
-    [loggedIn, loading, login, logout, groups, selectedGroupId, selectGroup, createGroup, addMembers],
-  )
-
-  return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>
+  return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 }
 
 export function useAuth() {
-  const ctx = useContext(AuthContext)
-  if (!ctx) {
-    throw new Error("useAuth must be used within an AuthProvider")
+  const context = useContext(AuthContext);
+  if (context === undefined) {
+    throw new Error('useAuth must be used within an AuthProvider');
   }
-  return ctx
+  return context;
 }
 
-export function generateMockGroup(name: string): Group {
-  const id = "grp_" + Math.random().toString(36).slice(2, 9)
-  return { id, name: name.trim() || "New Group", members: 0 }
-}
