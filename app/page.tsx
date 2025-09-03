@@ -7,7 +7,7 @@ import AppShell from "@/components/app-shell"
 import SecurityPanel from "@/components/security-panel"
 import SettingsPanel from "@/components/settings-panel"
 import GroupGate from "@/components/groups/group-gate"
-import { ChatView } from "@/components/chat/chat-view"
+import {ChatView} from "@/components/chat/chat-view"
 
 export default function Page() {
   // Get the state from our central 'brain', the auth context
