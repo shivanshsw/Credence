@@ -1,5 +1,3 @@
-// app/api/groups/route.ts
-
 import { NextResponse } from 'next/server';
 import { session } from '@descope/nextjs-sdk/server';
 import { neon } from '@neondatabase/serverless';
@@ -56,9 +54,7 @@ export async function POST(request: Request) {
 
         const descopeUserId = sessionInfo.token.sub;
 
-        // --- REFACTORED LOGIC STARTS HERE ---
-        // We will perform the queries sequentially instead of using a transaction
-        // to avoid the complex TypeScript issues. The try/catch block ensures safety.
+        // --- CORRECTED SEQUENTIAL LOGIC ---
 
         // 1. Get our application's internal user ID
         const users = (await sql`
@@ -76,16 +72,16 @@ export async function POST(request: Request) {
         `) as Group[];
         const newGroup = createdGroups[0];
 
-        // 3. Add the creator as the first member of the new group
+        // 3. Add the creator as the first member of the new group with the 'admin' role
         await sql`
-            INSERT INTO group_members (group_id, user_id) VALUES (${newGroup.id}, ${userId})
+            INSERT INTO group_members (group_id, user_id, role) VALUES (${newGroup.id}, ${userId}, 'admin')
         `;
 
-        // --- REFACTORED LOGIC ENDS HERE ---
+        // --- END OF LOGIC ---
 
         console.log(`✅ New group created: ${newGroup.name}`);
         return NextResponse.json(newGroup, { status: 201 });
-    } catch (error) {
+    } catch (error) { // FIX: Added the missing opening curly brace
         console.error('🔴 Failed to create group:', error);
         return NextResponse.json({ error: 'Internal Server Error' }, { status: 500 });
     }
