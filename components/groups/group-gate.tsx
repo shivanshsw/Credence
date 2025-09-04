@@ -1,3 +1,4 @@
+//group-gate.tsx
 "use client";
 
 import { useState } from "react";
@@ -15,10 +16,11 @@ import {
 import { useAuth } from "@/components/auth-context";
 
 type InviteMember = { email: string; role: string };
-const ROLES = ["employee", "manager", "admin"];
+const ROLES = ["employee", "manager", "admin","tech-lead","finance-manager","intern"];
+
 
 export default function GroupGate() {
-  const { groups, selectGroup, createGroup, addMembers } = useAuth();
+  const { groups, selectGroup, createGroup, addMembers, invites, acceptInvite } = useAuth();
   const [open, setOpen] = useState(false);
   const [name, setName] = useState("");
 

@@ -6,24 +6,21 @@ import { Separator } from "@/components/ui/separator"
 import { ScrollArea } from "@/components/ui/scroll-area"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
+import InvitesPanel from "@/components/invites/invites-panel" // Import the new component
 
 function DigitalClock() {
     const [time, setTime] = useState("")
     const [date, setDate] = useState("")
 
     useEffect(() => {
-        // This runs only on the client
         const timerId = setInterval(() => {
             const now = new Date()
-            // Use a specific locale and timeZone for consistent output
             setTime(now.toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit", timeZone: "Asia/Kolkata" }))
             setDate(now.toLocaleDateString("en-IN", { weekday: "short", month: "short", day: "numeric", timeZone: "Asia/Kolkata" }))
         }, 1000)
-
-        return () => clearInterval(timerId) // Cleanup on unmount
+        return () => clearInterval(timerId)
     }, [])
 
-    // Render a skeleton placeholder on the server and initial client render
     if (!time) {
         return (
             <div className="rounded-md border border-neutral-800 bg-neutral-950 p-4 shadow">
@@ -36,7 +33,6 @@ function DigitalClock() {
         )
     }
 
-    // Render the actual time once the client has mounted
     return (
         <div className="rounded-md border border-neutral-800 bg-neutral-950 p-4 shadow">
             <div className="flex items-center gap-3">
@@ -49,20 +45,17 @@ function DigitalClock() {
 }
 
 function Weather() {
-    // Set initial state to null
     const [weather, setWeather] = useState<{ temp: number; city: string; desc: string } | null>(null)
 
     useEffect(() => {
-        // This runs only on the client. Replace with your actual API call.
         const mockFetchWeather = () => {
             setTimeout(() => {
                 setWeather({ temp: 28, city: "Delhi", desc: "Clear" })
-            }, 1500) // Simulate network delay
+            }, 1500)
         }
         mockFetchWeather()
     }, [])
 
-    // Render a skeleton placeholder while fetching data
     if (!weather) {
         return (
             <div className="rounded-md border border-neutral-800 bg-neutral-950 p-4 shadow">
@@ -75,7 +68,6 @@ function Weather() {
         )
     }
 
-    // Render the actual weather data once it's available
     return (
         <div className="rounded-md border border-neutral-800 bg-neutral-950 p-4 shadow">
             <div className="flex items-center gap-3">
@@ -113,6 +105,13 @@ export default function RightRail({ onClearAll }: { onClearAll?: () => void }) {
 
             <Separator className="bg-neutral-800" />
 
+            {/* Add the Invites Panel */}
+            <div className="px-4 py-3">
+                <InvitesPanel />
+            </div>
+
+            <Separator className="bg-neutral-800" />
+
             <div className="flex h-0 min-h-0 flex-1 flex-col">
                 <div className="flex items-center justify-between px-4 py-3">
                     <h2 className="text-sm font-semibold tracking-wide">NOTIFICATIONS</h2>
@@ -125,7 +124,7 @@ export default function RightRail({ onClearAll }: { onClearAll?: () => void }) {
                         CLEAR ALL
                     </Button>
                 </div>
-                <ScrollArea className="h-[calc(100vh-290px)] px-4">
+                <ScrollArea className="h-[calc(100vh-500px)] px-4">
                     <ul className="space-y-2">
                         {notes.map((n) => (
                             <li
