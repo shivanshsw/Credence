@@ -56,12 +56,9 @@ export function ChatView() {
             });
             if (membersResponse.ok) {
                 const membersData = await membersResponse.json();
-                // Find current user's role
-                const currentUser = membersData.members.find((member: any) => 
-                    member.id === selectedGroup.id // This might need adjustment based on your user ID logic
-                );
-                if (currentUser) {
-                    setUserRole(currentUser.role);
+                // The API returns { role: "...", groupName: "..." }
+                if (membersData.role) {
+                    setUserRole(membersData.role);
                 }
             }
         } catch (error) {

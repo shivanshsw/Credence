@@ -4,139 +4,239 @@ import { neon } from '@neondatabase/serverless';
 
 const sql = neon(process.env.DATABASE_URL!);
 
-interface Member {
-    id: string;
-    name: string;
-    email: string;
-    role: string;
-}
-
-// GET: Fetch all members of a group
 export async function GET(
-    request: Request,
-    { params }: { params: { id: string } }
+  request: Request,
+  { params }: { params: { id: string } }
 ) {
-    const sessionInfo = await session();
+  const sessionInfo = await session();
 
-    if (!sessionInfo?.token?.sub) {
-        return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+  if (!sessionInfo?.token?.sub) {
+    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+  }
+
+  try {
+    const descopeUserId = sessionInfo.token.sub;
+    const groupId = params.id;
+
+    // Get user's internal ID
+    const users = await sql`
+      SELECT id FROM users WHERE descope_user_id = ${descopeUserId}
+    ` as { id: string }[];
+
+    if (!users || users.length === 0) {
+      return NextResponse.json({ error: 'User not found' }, { status: 404 });
+    }
+    const userId = users[0].id;
+
+    // Check if user is a member of this group
+    const membership = await sql`
+      SELECT gm.role, g.name as group_name
+      FROM group_members gm
+      JOIN groups g ON gm.group_id = g.id
+      WHERE gm.group_id = ${groupId} AND gm.user_id = ${userId}
+    ` as { role: string; group_name: string }[];
+
+    if (!membership || membership.length === 0) {
+      return NextResponse.json({ error: 'Not a member of this group' }, { status: 404 });
     }
 
-    try {
-        const groupId = params.id;
-        const descopeUserId = sessionInfo.token.sub;
+    const userRole = membership[0].role;
 
-        // 1. Verify the user is a member of this group
-        const userMembership = await sql`
-            SELECT gm.role FROM group_members gm
-            JOIN users u ON gm.user_id = u.id
-            WHERE gm.group_id = ${groupId} AND u.descope_user_id = ${descopeUserId}
-        ` as { role: string }[];
+    // If user is admin, return all members. Otherwise, return just user's role
+    if (userRole === 'admin') {
+      // Get all members of the group
+      const allMembers = await sql`
+        SELECT 
+          gm.user_id as id,
+          u.name,
+          u.email,
+          gm.role,
+          gm.joined_at
+        FROM group_members gm
+        JOIN users u ON gm.user_id = u.id
+        WHERE gm.group_id = ${groupId}
+        ORDER BY gm.joined_at ASC
+      ` as { id: string; name: string | null; email: string | null; role: string; joined_at: string }[];
 
-        if (!userMembership || userMembership.length === 0) {
-            return NextResponse.json({ 
-                error: 'You are not a member of this group.' 
-            }, { status: 403 });
-        }
-
-        // 2. Fetch all members of the group
-        const members = await sql`
-            SELECT 
-                u.id,
-                u.name,
-                u.email,
-                gm.role
-            FROM group_members gm
-            JOIN users u ON gm.user_id = u.id
-            WHERE gm.group_id = ${groupId}
-            ORDER BY gm.role DESC, u.name ASC
-        ` as Member[];
-
-        return NextResponse.json({ members });
-
-    } catch (error) {
-        console.error('🔴 Failed to fetch group members:', error);
-        return NextResponse.json({ error: 'Internal Server Error' }, { status: 500 });
+      return NextResponse.json({
+        role: userRole,
+        groupName: membership[0].group_name,
+        members: allMembers.map(member => ({
+          id: member.id,
+          name: member.name || 'Unknown User',
+          email: member.email || 'No email',
+          role: member.role,
+          joined_at: member.joined_at
+        }))
+      });
+    } else {
+      // Non-admin users only get their own role
+      return NextResponse.json({
+        role: userRole,
+        groupName: membership[0].group_name
+      });
     }
+
+  } catch (error) {
+    console.error('Failed to get group members:', error);
+    return NextResponse.json({ error: 'Internal Server Error' }, { status: 500 });
+  }
 }
 
-// PATCH: Update a member's role
 export async function PATCH(
-    request: Request,
-    { params }: { params: { id: string } }
+  request: Request,
+  { params }: { params: { id: string } }
 ) {
-    const sessionInfo = await session();
+  const sessionInfo = await session();
 
-    if (!sessionInfo?.token?.sub) {
-        return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+  if (!sessionInfo?.token?.sub) {
+    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+  }
+
+  try {
+    const descopeUserId = sessionInfo.token.sub;
+    const groupId = params.id;
+    const { member_user_id, new_role } = await request.json();
+    
+    console.log(`🔄 PATCH request - Group ID: ${groupId}, Member User ID: ${member_user_id}, New Role: ${new_role}`);
+
+    if (!member_user_id || !new_role) {
+      return NextResponse.json({ error: 'Missing required fields' }, { status: 400 });
     }
 
-    try {
-        const groupId = params.id;
-        const descopeUserId = sessionInfo.token.sub;
-        const { member_user_id, new_role } = await request.json();
-
-        if (!member_user_id || !new_role) {
-            return NextResponse.json({ 
-                error: 'member_user_id and new_role are required' 
-            }, { status: 400 });
-        }
-
-        // Validate role
-        const validRoles = ['admin', 'manager', 'member'];
-        if (!validRoles.includes(new_role)) {
-            return NextResponse.json({ 
-                error: 'Invalid role. Must be one of: admin, manager, member' 
-            }, { status: 400 });
-        }
-
-        // 1. Verify the requesting user is an admin of this group
-        const userMembership = await sql`
-            SELECT gm.role FROM group_members gm
-            JOIN users u ON gm.user_id = u.id
-            WHERE gm.group_id = ${groupId} AND u.descope_user_id = ${descopeUserId}
-        ` as { role: string }[];
-
-        if (!userMembership || userMembership.length === 0) {
-            return NextResponse.json({ 
-                error: 'You are not a member of this group.' 
-            }, { status: 403 });
-        }
-
-        if (userMembership[0].role !== 'admin') {
-            return NextResponse.json({ 
-                error: 'Only group admins can change member roles.' 
-            }, { status: 403 });
-        }
-
-        // 2. Verify the target member exists in this group
-        const targetMembership = await sql`
-            SELECT gm.role FROM group_members gm
-            WHERE gm.group_id = ${groupId} AND gm.user_id = ${member_user_id}
-        ` as { role: string }[];
-
-        if (!targetMembership || targetMembership.length === 0) {
-            return NextResponse.json({ 
-                error: 'Target user is not a member of this group.' 
-            }, { status: 404 });
-        }
-
-        // 3. Update the member's role
-        await sql`
-            UPDATE group_members 
-            SET role = ${new_role}
-            WHERE group_id = ${groupId} AND user_id = ${member_user_id}
-        `;
-
-        console.log(`✅ Updated member ${member_user_id} role to ${new_role} in group ${groupId}`);
-        
-        return NextResponse.json({ 
-            success: true, 
-            message: 'Member role updated successfully' 
-        });
-
-    } catch (error) {
-        console.error('🔴 Failed to update member role:', error);
-        return NextResponse.json({ error: 'Internal Server Error' }, { status: 500 });
+    // Validate the role value
+    const validRoles = ['admin', 'manager', 'employee'];
+    if (!validRoles.includes(new_role)) {
+      return NextResponse.json({ error: `Invalid role. Must be one of: ${validRoles.join(', ')}` }, { status: 400 });
     }
+
+    // Get user's internal ID
+    const users = await sql`
+      SELECT id FROM users WHERE descope_user_id = ${descopeUserId}
+    ` as { id: string }[];
+
+    if (!users || users.length === 0) {
+      return NextResponse.json({ error: 'User not found' }, { status: 404 });
+    }
+    const userId = users[0].id;
+
+    // Check if user is admin of this group
+    const membership = await sql`
+      SELECT role FROM group_members 
+      WHERE group_id = ${groupId} AND user_id = ${userId}
+    ` as { role: string }[];
+
+    if (!membership || membership.length === 0 || membership[0].role !== 'admin') {
+      return NextResponse.json({ error: 'Admin access required' }, { status: 403 });
+    }
+
+    // Update the member's role in the group
+    const groupUpdateResult = await sql`
+      UPDATE group_members 
+      SET role = ${new_role}
+      WHERE group_id = ${groupId} AND user_id = ${member_user_id}
+    `;
+    console.log(`🔄 Group role update result:`, groupUpdateResult);
+
+    // Also update the user's global role to match the group role
+    // This ensures the chat system recognizes the role change
+    const userUpdateResult = await sql`
+      UPDATE users 
+      SET role = ${new_role}
+      WHERE id = ${member_user_id}
+    `;
+    console.log(`🔄 User role update result:`, userUpdateResult);
+    
+    // Debug logging to verify the update
+    console.log(`🔄 Role update - User ID: ${member_user_id}, New Role: ${new_role}, Group ID: ${groupId}`);
+    
+    // Verify the update worked
+    const verifyUser = await sql`
+      SELECT role FROM users WHERE id = ${member_user_id}
+    `;
+    console.log(`✅ Verification - User ${member_user_id} role is now: ${verifyUser[0]?.role}`);
+    
+    // Also verify the group role update
+    const verifyGroupRole = await sql`
+      SELECT role FROM group_members 
+      WHERE group_id = ${groupId} AND user_id = ${member_user_id}
+    `;
+    console.log(`✅ Verification - Group role is now: ${verifyGroupRole[0]?.role}`);
+
+    return NextResponse.json({ success: true, message: 'Role updated successfully' });
+
+  } catch (error) {
+    console.error('Failed to update member role:', error);
+    console.error('Error details:', {
+      message: error instanceof Error ? error.message : 'Unknown error',
+      stack: error instanceof Error ? error.stack : undefined,
+      member_user_id,
+      new_role,
+      groupId
+    });
+    return NextResponse.json({ error: 'Internal Server Error' }, { status: 500 });
+  }
+}
+
+export async function DELETE(
+  request: Request,
+  { params }: { params: { id: string } }
+) {
+  const sessionInfo = await session();
+
+  if (!sessionInfo?.token?.sub) {
+    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+  }
+
+  try {
+    const descopeUserId = sessionInfo.token.sub;
+    const groupId = params.id;
+    const { member_user_id } = await request.json();
+
+    if (!member_user_id) {
+      return NextResponse.json({ error: 'Missing member_user_id' }, { status: 400 });
+    }
+
+    // Get user's internal ID
+    const users = await sql`
+      SELECT id FROM users WHERE descope_user_id = ${descopeUserId}
+    ` as { id: string }[];
+
+    if (!users || users.length === 0) {
+      return NextResponse.json({ error: 'User not found' }, { status: 404 });
+    }
+    const userId = users[0].id;
+
+    // Check if user is admin of this group
+    const membership = await sql`
+      SELECT role FROM group_members 
+      WHERE group_id = ${groupId} AND user_id = ${userId}
+    ` as { role: string }[];
+
+    if (!membership || membership.length === 0 || membership[0].role !== 'admin') {
+      return NextResponse.json({ error: 'Admin access required' }, { status: 403 });
+    }
+
+    // Don't allow removing the last admin
+    const adminCount = await sql`
+      SELECT COUNT(*) as count FROM group_members 
+      WHERE group_id = ${groupId} AND role = 'admin'
+    ` as { count: number }[];
+
+    if (adminCount[0].count <= 1) {
+      return NextResponse.json({ error: 'Cannot remove the last admin' }, { status: 400 });
+    }
+
+    // Remove the member
+    await sql`
+      DELETE FROM group_members 
+      WHERE group_id = ${groupId} AND user_id = ${member_user_id}
+    `;
+
+    return NextResponse.json({ success: true, message: 'Member removed successfully' });
+
+  } catch (error) {
+    console.error('Failed to remove member:', error);
+    return NextResponse.json({ error: 'Internal Server Error' }, { status: 500 });
+  }
 }

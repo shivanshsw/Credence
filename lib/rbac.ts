@@ -84,7 +84,7 @@ export class RBACService {
         GROUP BY role
         ORDER BY role
       `;
-      return result;
+      return result as { role: string; count: number }[];
     } catch (error) {
       console.error('Error fetching roles:', error);
       return [];
@@ -135,7 +135,7 @@ export class RBACService {
         FROM permissions 
         ORDER BY name
       `;
-      return result;
+      return result as { name: string; description: string }[];
     } catch (error) {
       console.error('Error fetching permissions:', error);
       return [];

@@ -16,6 +16,7 @@ interface AuthContextType {
   groups: Group[];
   selectedGroupId: string | null;
   selectedGroup: Group | null;
+  userRole: string | null;
   selectGroup: (groupId: string | null) => void;
   clearGroup: () => void;
   createGroup: (name: string) => Promise<string | null>;
@@ -35,6 +36,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     if (typeof window !== "undefined") return localStorage.getItem("selectedGroupId");
     return null;
   });
+  const [userRole, setUserRole] = useState<string | null>(null);
 
   // ---- Helpers ----
   const safeJson = async (res: Response) => {
@@ -53,6 +55,23 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       if (Array.isArray(data)) setGroups(data);
     } catch (err) {
       console.error("Failed to fetch groups:", err);
+    }
+  };
+
+  // fetch user role in selected group
+  const fetchUserRole = async (groupId: string) => {
+    try {
+      const res = await fetch(`/api/groups/${groupId}/members`, { method: "GET", credentials: "include" });
+      if (!res.ok) {
+        console.error("Failed to fetch user role:", await res.text());
+        setUserRole(null);
+        return;
+      }
+      const data = await res.json();
+      setUserRole(data.role || null);
+    } catch (err) {
+      console.error("Failed to fetch user role:", err);
+      setUserRole(null);
     }
   };
 
@@ -88,9 +107,15 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const selectGroup = (groupId: string | null) => {
     setSelectedGroupId(groupId);
+    setUserRole(null); // Clear role when changing groups
     try {
-      if (groupId) localStorage.setItem("selectedGroupId", groupId);
-      else localStorage.removeItem("selectedGroupId");
+      if (groupId) {
+        localStorage.setItem("selectedGroupId", groupId);
+        // Fetch user role for the selected group
+        fetchUserRole(groupId);
+      } else {
+        localStorage.removeItem("selectedGroupId");
+      }
     } catch {}
     // keep user on / and let page re-evaluate
     try { router.replace("/"); } catch {}
@@ -151,6 +176,15 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     } catch {}
   }, [selectedGroupId]);
 
+  // Fetch user role when selectedGroupId changes
+  useEffect(() => {
+    if (selectedGroupId && isAuthenticated) {
+      fetchUserRole(selectedGroupId);
+    } else {
+      setUserRole(null);
+    }
+  }, [selectedGroupId, isAuthenticated]);
+
   const user = descopeUser ? { id: undefined, name: descopeUser.name, email: descopeUser.email } : null;
   const loggedIn = Boolean(isAuthenticated);
   const loading = Boolean(isSessionLoading || isUserLoading);
@@ -165,6 +199,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     groups,
     selectedGroupId,
     selectedGroup,
+    userRole,
     selectGroup,
     clearGroup,
     createGroup,

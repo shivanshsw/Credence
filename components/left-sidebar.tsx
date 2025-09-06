@@ -8,6 +8,7 @@ import { Database, Calendar, FileText, Shield, Settings, Bell, LogOut, CheckSqua
 import { cn } from "@/lib/utils"
 import { useState } from "react"
 import { Popover, PopoverTrigger, PopoverContent } from "@/components/ui/popover"
+import { useAuth } from "@/components/auth-context"
 
 const NAV = [
   { href: "/", icon: Database, label: "Overview" },
@@ -29,6 +30,7 @@ export default function LeftSidebar({
   const pathname = usePathname()
   const search = useSearchParams()
   const view = search.get("view")
+  const { user, loggedIn, userRole } = useAuth()
 
   const [items, setItems] = useState<{ id: string; title: string; desc: string; href: string; time: string }[]>([
     {
@@ -114,32 +116,51 @@ export default function LeftSidebar({
 
       {/* Profile + Quick actions */}
       <div className="flex items-center justify-between gap-3 px-4 py-4">
-        <div className="flex min-w-0 items-center gap-3">
-          <Avatar className="h-8 w-8">
-            <AvatarFallback>KR</AvatarFallback>
-          </Avatar>
-          <div className="min-w-0">
-            <p className="truncate text-sm font-medium">KRANSON</p>
-            <p className="truncate text-xs text-neutral-400">Finance Manager</p>
+        {loggedIn ? (
+          <div className="flex min-w-0 items-center gap-3">
+            <Avatar className="h-8 w-8">
+              <AvatarFallback>
+                {user?.name ? user.name.substring(0, 2).toUpperCase() : 'U'}
+              </AvatarFallback>
+            </Avatar>
+            <div className="min-w-0">
+              <p className="truncate text-sm font-medium">
+                {user?.name || 'User'}
+              </p>
+              <p className="truncate text-xs text-neutral-400">
+                {userRole || 'No role'}
+              </p>
+            </div>
           </div>
-        </div>
+        ) : (
+          <div className="flex min-w-0 items-center gap-3">
+            <Avatar className="h-8 w-8">
+              <AvatarFallback>?</AvatarFallback>
+            </Avatar>
+            <div className="min-w-0">
+              <p className="truncate text-sm font-medium text-neutral-400">Not signed in</p>
+              <p className="truncate text-xs text-neutral-500">Sign in to continue</p>
+            </div>
+          </div>
+        )}
         <div className="flex items-center gap-2">
-          <Popover>
-            <PopoverTrigger asChild>
-              <button
-                type="button"
-                className="relative rounded-md p-1.5 text-neutral-400 transition hover:bg-neutral-900 hover:text-neutral-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-400"
-                aria-label={`Notifications (${unread} unread)`}
-                title="Notifications"
-              >
-                <Bell className="h-4 w-4" />
-                {unread > 0 && (
-                  <span className="absolute -right-0.5 -top-0.5 inline-flex h-4 min-w-4 translate-x-1/4 -translate-y-1/4 items-center justify-center rounded-full bg-teal-500 px-1 text-[10px] leading-none text-black">
-                    {unread}
-                  </span>
-                )}
-              </button>
-            </PopoverTrigger>
+          {loggedIn && (
+            <Popover>
+              <PopoverTrigger asChild>
+                <button
+                  type="button"
+                  className="relative rounded-md p-1.5 text-neutral-400 transition hover:bg-neutral-900 hover:text-neutral-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-400"
+                  aria-label={`Notifications (${unread} unread)`}
+                  title="Notifications"
+                >
+                  <Bell className="h-4 w-4" />
+                  {unread > 0 && (
+                    <span className="absolute -right-0.5 -top-0.5 inline-flex h-4 min-w-4 translate-x-1/4 -translate-y-1/4 items-center justify-center rounded-full bg-teal-500 px-1 text-[10px] leading-none text-black">
+                      {unread}
+                    </span>
+                  )}
+                </button>
+              </PopoverTrigger>
 
             <PopoverContent
               side="top"
@@ -187,17 +208,20 @@ export default function LeftSidebar({
                 )}
               </div>
             </PopoverContent>
-          </Popover>
+            </Popover>
+          )}
 
-          <button
-            type="button"
-            onClick={onLogout}
-            className="rounded-md p-1.5 text-neutral-400 transition hover:bg-neutral-900 hover:text-neutral-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-400"
-            aria-label="Log out"
-            title="Log out"
-          >
-            <LogOut className="h-4 w-4" />
-          </button>
+          {loggedIn && (
+            <button
+              type="button"
+              onClick={onLogout}
+              className="rounded-md p-1.5 text-neutral-400 transition hover:bg-neutral-900 hover:text-neutral-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-400"
+              aria-label="Log out"
+              title="Log out"
+            >
+              <LogOut className="h-4 w-4" />
+            </button>
+          )}
         </div>
       </div>
     </div>
