@@ -4,7 +4,7 @@ import Link from "next/link"
 import { usePathname, useSearchParams } from "next/navigation"
 import { Avatar, AvatarFallback } from "@/components/ui/avatar"
 import { Separator } from "@/components/ui/separator"
-import { Database, Calendar, FileText, Shield, Settings, Bell, LogOut } from "lucide-react"
+import { Database, Calendar, FileText, Shield, Settings, Bell, LogOut, CheckSquare } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { useState } from "react"
 import { Popover, PopoverTrigger, PopoverContent } from "@/components/ui/popover"
@@ -13,6 +13,8 @@ const NAV = [
   { href: "/", icon: Database, label: "Overview" },
   { href: "/calendar", icon: Calendar, label: "Calendar" },
   { href: "/notes", icon: FileText, label: "Notes" },
+  { href: "/tasks", icon: CheckSquare, label: "Tasks" },
+  { href: "/admin", icon: Shield, label: "Admin" },
   { href: "/?view=security", icon: Shield, label: "Security" },
   { href: "/?view=settings", icon: Settings, label: "Settings" },
 ]

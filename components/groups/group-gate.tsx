@@ -14,13 +14,15 @@ import {
   DialogClose,
 } from "@/components/ui/dialog";
 import { useAuth } from "@/components/auth-context";
+import { Copy, Users } from "lucide-react";
+import { toast } from "@/hooks/use-toast";
 
 type InviteMember = { email: string; role: string };
 const ROLES = ["employee", "manager", "admin","tech-lead","finance-manager","intern"];
 
 
 export default function GroupGate() {
-  const { groups, selectGroup, createGroup, addMembers, invites, acceptInvite } = useAuth();
+  const { groups, selectGroup, createGroup, addMembers } = useAuth();
   const [open, setOpen] = useState(false);
   const [name, setName] = useState("");
 
@@ -30,16 +32,49 @@ export default function GroupGate() {
   const [emailInput, setEmailInput] = useState("");
   const [members, setMembers] = useState<InviteMember[]>([]);
 
+  // Join group modal state
+  const [joinOpen, setJoinOpen] = useState(false);
+  const [inviteCode, setInviteCode] = useState("");
+  const [joining, setJoining] = useState(false);
+
+  // Invite code display state
+  const [showInviteCode, setShowInviteCode] = useState(false);
+  const [generatedInviteCode, setGeneratedInviteCode] = useState("");
+
   const onCreate = async () => {
     if (!name.trim()) return;
-    const newGroupId = await createGroup(name.trim());
-    if (newGroupId) {
-      setCreatedGroupId(newGroupId);
+    try {
+      const response = await fetch('/api/groups', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({ name: name.trim() })
+      });
+      
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        console.error('Group creation failed:', response.status, errorData);
+        throw new Error(errorData.error || `Failed to create group (${response.status})`);
+      }
+      
+      const groupData = await response.json();
+      setCreatedGroupId(groupData.id);
+      setGeneratedInviteCode(groupData.invite_code || '');
       setName("");
       setOpen(false);
-      setAddOpen(true);
-    } else {
-      console.error("Failed to get new group ID after creation.");
+      if (groupData.invite_code) {
+        setShowInviteCode(true);
+      } else {
+        // If no invite code, just select the group
+        selectGroup(groupData.id);
+      }
+    } catch (error) {
+      console.error("Failed to create group:", error);
+      toast({
+        title: "Error",
+        description: "Failed to create group. Please try again.",
+        variant: "destructive"
+      });
       setOpen(false);
     }
   };
@@ -78,6 +113,69 @@ export default function GroupGate() {
     setAddOpen(false);
   };
 
+  const joinGroup = async () => {
+    if (!inviteCode.trim()) return;
+    
+    setJoining(true);
+    try {
+      const response = await fetch('/api/groups/join', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({ invite_code: inviteCode.trim() })
+      });
+      
+      if (!response.ok) {
+        let errorData = {};
+        try {
+          errorData = await response.json();
+        } catch (parseError) {
+          console.warn('Failed to parse error response as JSON:', parseError);
+        }
+        console.error('Join group failed:', response.status, errorData);
+        throw new Error(errorData.error || `Failed to join group (${response.status})`);
+      }
+      
+      const data = await response.json();
+      toast({
+        title: "Success",
+        description: data.message,
+      });
+      
+      setInviteCode("");
+      setJoinOpen(false);
+      
+      // Refresh groups list
+      window.location.reload();
+    } catch (error) {
+      console.error("Failed to join group:", error);
+      const errorMessage = error instanceof Error ? error.message : "Failed to join group";
+      toast({
+        title: "Error",
+        description: errorMessage,
+        variant: "destructive"
+      });
+    } finally {
+      setJoining(false);
+    }
+  };
+
+  const copyInviteCode = () => {
+    navigator.clipboard.writeText(generatedInviteCode);
+    toast({
+      title: "Copied",
+      description: "Invite code copied to clipboard",
+    });
+  };
+
+  const closeInviteCode = () => {
+    setShowInviteCode(false);
+    setGeneratedInviteCode("");
+    if (createdGroupId) {
+      selectGroup(createdGroupId);
+    }
+  };
+
   return (
       <section
           aria-labelledby="groups-title"
@@ -87,13 +185,23 @@ export default function GroupGate() {
           <h1 id="groups-title" className="text-pretty text-sm font-semibold">
             Your Groups
           </h1>
-          <Button
-              variant="outline"
-              onClick={() => setOpen(true)}
-              className="border-teal-500/50 text-teal-400 hover:bg-teal-500/10"
-          >
-            Create a Group
-          </Button>
+          <div className="flex gap-2">
+            <Button
+                variant="outline"
+                onClick={() => setJoinOpen(true)}
+                className="border-blue-500/50 text-blue-400 hover:bg-blue-500/10"
+            >
+              <Users className="w-4 h-4 mr-2" />
+              Join Group
+            </Button>
+            <Button
+                variant="outline"
+                onClick={() => setOpen(true)}
+                className="border-teal-500/50 text-teal-400 hover:bg-teal-500/10"
+            >
+              Create a Group
+            </Button>
+          </div>
         </header>
 
         <div className="flex min-h-0 flex-1 flex-col gap-3 p-3">
@@ -252,6 +360,104 @@ export default function GroupGate() {
                   onClick={finishMembers}
               >
                 Save & Continue
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+
+        {/* Join group dialog */}
+        <Dialog open={joinOpen} onOpenChange={setJoinOpen}>
+          <DialogTrigger className="sr-only">Join group</DialogTrigger>
+          <DialogContent className="border-white/10 bg-black/90 sm:max-w-md">
+            <DialogHeader>
+              <DialogTitle className="text-foreground">
+                Join a Group
+              </DialogTitle>
+            </DialogHeader>
+            <div className="space-y-3">
+              <label className="text-sm text-neutral-400">Invite Code</label>
+              <Input
+                  value={inviteCode}
+                  onChange={(e) => setInviteCode(e.target.value)}
+                  placeholder="Enter invite code (e.g., ABC12345)"
+                  className="border-white/10 bg-black/60"
+              />
+              <p className="text-xs text-neutral-500">
+                Ask a group admin for the invite code to join their group.
+              </p>
+              <div className="rounded-lg border border-blue-500/30 bg-blue-500/10 p-3">
+                <p className="text-xs text-blue-400">
+                  <strong>Note:</strong> Invite code feature requires database migration. If you get an error, please run the migration first.
+                </p>
+              </div>
+            </div>
+            <DialogFooter className="gap-2">
+              <DialogClose asChild>
+                <Button
+                    variant="outline"
+                    className="border-white/10 bg-transparent"
+                >
+                  Cancel
+                </Button>
+              </DialogClose>
+              <Button
+                  className="bg-blue-600 hover:bg-blue-500"
+                  onClick={joinGroup}
+                  disabled={joining || !inviteCode.trim()}
+              >
+                {joining ? "Joining..." : "Join Group"}
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+
+        {/* Invite code display dialog */}
+        <Dialog open={showInviteCode} onOpenChange={setShowInviteCode}>
+          <DialogTrigger className="sr-only">Show invite code</DialogTrigger>
+          <DialogContent className="border-white/10 bg-black/90 sm:max-w-md">
+            <DialogHeader>
+              <DialogTitle className="text-foreground">
+                Group Created Successfully!
+              </DialogTitle>
+            </DialogHeader>
+            <div className="space-y-4">
+              {generatedInviteCode ? (
+                <>
+                  <div className="rounded-lg border border-green-500/30 bg-green-500/10 p-4">
+                    <p className="text-sm text-green-400 mb-2">Share this invite code with others:</p>
+                    <div className="flex items-center gap-2">
+                      <code className="flex-1 rounded bg-black/60 px-3 py-2 text-lg font-mono text-white">
+                        {generatedInviteCode}
+                      </code>
+                      <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={copyInviteCode}
+                          className="border-green-500/50 text-green-400 hover:bg-green-500/10"
+                      >
+                        <Copy className="w-4 h-4" />
+                      </Button>
+                    </div>
+                  </div>
+                  <p className="text-xs text-neutral-500">
+                    Anyone with this code can join your group. Keep it secure and only share with trusted members.
+                  </p>
+                </>
+              ) : (
+                <div className="rounded-lg border border-yellow-500/30 bg-yellow-500/10 p-4">
+                  <p className="text-sm text-yellow-400 mb-2">Group created successfully!</p>
+                  <p className="text-xs text-neutral-500">
+                    Note: Invite code feature requires database migration. Please run the migration to enable invite codes.
+                  </p>
+                </div>
+              )}
+            </div>
+            <DialogFooter>
+              <Button
+                  className="bg-teal-600 hover:bg-teal-500"
+                  onClick={closeInviteCode}
+              >
+                Continue to Group
               </Button>
             </DialogFooter>
           </DialogContent>

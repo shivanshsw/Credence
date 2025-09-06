@@ -9,12 +9,17 @@ import { cn } from "@/lib/utils"
 export function ChatMessage({
   role,
   children,
+  isCommand,
+  requiresPermission,
 }: {
   role: "user" | "assistant"
   children: React.ReactNode
+  isCommand?: boolean
+  requiresPermission?: string
 }) {
   const isUser = role === "user"
   const initials = isUser ? "KR" : "AI"
+  
   return (
     <div className={cn("flex items-start gap-3", isUser ? "justify-end" : "justify-start")}>
       {!isUser && (
@@ -27,9 +32,23 @@ export function ChatMessage({
           "max-w-[75%] rounded-md border px-3 py-2 text-sm leading-relaxed",
           isUser
             ? "border-teal-500/30 bg-teal-500/10 text-teal-100"
+            : requiresPermission === 'permission_denied'
+            ? "border-red-500/30 bg-red-500/10 text-red-100"
+            : isCommand
+            ? "border-green-500/30 bg-green-500/10 text-green-100"
             : "border-neutral-800 bg-neutral-950 text-neutral-200",
         )}
       >
+        {isCommand && !isUser && (
+          <div className="mb-2 flex items-center gap-2">
+            <span className="text-xs font-medium text-green-400">✓ Command Executed</span>
+          </div>
+        )}
+        {requiresPermission === 'permission_denied' && !isUser && (
+          <div className="mb-2 flex items-center gap-2">
+            <span className="text-xs font-medium text-red-400">⚠ Permission Required</span>
+          </div>
+        )}
         {children}
       </div>
       {isUser && (

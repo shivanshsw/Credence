@@ -1,0 +1,135 @@
+Credence MCP - File Structure
+Root Directory
+credence2/
+├── README.md
+├── package.json
+├── next.config.js
+├── tailwind.config.js
+├── tsconfig.json
+├── .env.local                  # Environment variables
+├── .gitignore
+└── public/
+    └── (static assets)
+App Directory (Next.js 13+ App Router)
+app/
+├── globals.css                 # Global styles & Tailwind imports
+├── layout.tsx                  # Root layout with providers
+├── loading.tsx                 # Global loading UI
+├── page.tsx                    # Home page / router logic
+├── sign-in/
+│   └── page.tsx               # Standalone login page
+├── calendar/
+│   └── page.tsx               # Calendar view
+├── notes/
+│   └── page.tsx               # Notes management
+├── security/
+│   └── page.tsx               # Security settings
+└── api/                       # Backend API routes
+    ├── auth/
+    │   └── sync/
+    │       └── route.ts       # POST: Sync Descope user to DB
+    ├── groups/
+    │   └── route.ts           # GET: Fetch groups, POST: Create group
+    └── invites/
+        ├── route.ts           # GET: Fetch invites, POST: Send invites
+        └── [id]/
+            ├── accept/
+            │   └── route.ts   # PATCH: Accept invite
+            └── decline/
+                └── route.ts   # PATCH: Decline invite
+Components Directory
+components/
+├── auth-context.tsx           # Global auth state & group management
+├── app-shell.tsx             # Main layout wrapper
+├── left-sidebar.tsx          # Navigation sidebar
+├── right-rail.tsx            # Right sidebar with notifications
+├── topbar.tsx                # Mobile header
+├── security-panel.tsx        # Security settings content
+├── settings-panel.tsx        # User settings content
+├── theme-provider.tsx        # Theme context (if needed)
+├── chat/
+│   ├── chat-view.tsx         # Main chat interface
+│   ├── chat-input.tsx        # Message input component
+│   ├── chat-message.tsx      # Message display components
+│   └── typing-indicator.tsx  # Loading animation
+├── groups/
+│   └── group-gate.tsx        # Group selection/creation UI
+├── invites/
+│   └── invites-panel.tsx     # Invitations display & actions
+└── ui/                       # ShadCN UI primitives
+    ├── button.tsx
+    ├── input.tsx
+    ├── card.tsx
+    ├── dialog.tsx
+    ├── badge.tsx
+    ├── separator.tsx
+    ├── scroll-area.tsx
+    ├── textarea.tsx
+    ├── switch.tsx
+    ├── avatar.tsx
+    ├── popover.tsx
+    └── (other ShadCN components)
+Library Directory
+lib/
+└── utils.ts                  # Utility functions (cn, etc.)
+Database Schema (Reference)
+Database: Neon PostgreSQL
+
+Tables:
+├── users
+│   ├── id (UUID, PK)
+│   ├── descope_user_id (TEXT)
+│   ├── name (TEXT)
+│   ├── email (TEXT)
+│   └── created_at (TIMESTAMPTZ)
+├── groups
+│   ├── id (UUID, PK)
+│   ├── name (TEXT)
+│   ├── created_by (UUID, FK)
+│   └── created_at (TIMESTAMPTZ)
+├── group_members
+│   ├── group_id (UUID, FK)
+│   ├── user_id (UUID, FK)
+│   ├── role (group_role enum)
+│   └── joined_at (TIMESTAMPTZ)
+└── invites
+    ├── id (UUID, PK)
+    ├── group_id (UUID, FK)
+    ├── invited_by_user_id (UUID, FK)
+    ├── invited_user_email (TEXT)
+    ├── role (group_role enum)
+    ├── status (TEXT)
+    └── created_at (TIMESTAMPTZ)
+Key File Dependencies
+Authentication Flow
+app/layout.tsx → DescopeProvider → AuthProvider
+├── app/page.tsx (consumes auth state)
+├── components/app-shell.tsx (logout functionality)
+└── app/sign-in/page.tsx (handles login)
+Group Management Flow
+components/auth-context.tsx (state management)
+├── components/groups/group-gate.tsx (UI)
+├── app/api/groups/route.ts (backend)
+└── app/api/invites/route.ts (invitations)
+Chat System Flow
+components/chat/chat-view.tsx (main interface)
+├── components/chat/chat-input.tsx (user input)
+├── components/chat/chat-message.tsx (message display)
+└── components/auth-context.tsx (group context)
+Styling System
+app/globals.css (Tailwind + custom variables)
+├── tailwind.config.js (configuration)
+├── components/ui/* (ShadCN primitives)
+└── lib/utils.ts (styling utilities)
+Environment Variables Required
+.env.local:
+├── NEXT_PUBLIC_DESCOPE_PROJECT_ID
+├── DESCOPE_MANAGEMENT_KEY
+└── DATABASE_URL (Neon connection string)
+Key Technologies Stack
+Frontend: Next.js 14, React 18, TypeScript
+Styling: Tailwind CSS, ShadCN UI
+Authentication: Descope SDK
+Database: Neon PostgreSQL
+State Management: React Context
+Deployment: Vercel (serverless)
