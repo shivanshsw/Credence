@@ -6,7 +6,6 @@ import { Separator } from "@/components/ui/separator"
 import { ScrollArea } from "@/components/ui/scroll-area"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
-import InvitesPanel from "@/components/invites/invites-panel" // Import the new component
 
 function DigitalClock() {
     const [time, setTime] = useState("")
@@ -101,13 +100,6 @@ export default function RightRail({ onClearAll }: { onClearAll?: () => void }) {
                     <DigitalClock />
                     <Weather />
                 </div>
-            </div>
-
-            <Separator className="bg-neutral-800" />
-
-            {/* Add the Invites Panel */}
-            <div className="px-4 py-3">
-                <InvitesPanel />
             </div>
 
             <Separator className="bg-neutral-800" />

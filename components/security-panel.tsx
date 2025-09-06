@@ -93,12 +93,21 @@ export default function SecurityPanel() {
                   </div>
                 </div>
               </div>
-              <Link
-                href="/?view=security#audit-log"
-                className="text-xs text-teal-400 underline decoration-teal-500/30 underline-offset-2"
-              >
-                View approval history in Audit Log
-              </Link>
+              <div className="space-y-2">
+                <Link
+                  href="/?view=security#audit-log"
+                  className="text-xs text-teal-400 underline decoration-teal-500/30 underline-offset-2"
+                >
+                  View approval history in Audit Log
+                </Link>
+                <br />
+                <Link
+                  href="/admin"
+                  className="text-xs text-cyan-400 underline decoration-cyan-500/30 underline-offset-2"
+                >
+                  Manage Permissions & Roles
+                </Link>
+              </div>
             </div>
           </div>
 

@@ -3,17 +3,81 @@
 
 import { ChatMessage, ToolOutput, TypingIndicator } from "@/components/chat/chat-message";
 import { ChatInput } from "@/components/chat/chat-input";
+import { MembersManagement } from "@/components/groups/members-management";
 import { useEffect, useRef, useState } from "react";
 import { useAuth } from "@/components/auth-context";
 import { Button } from "@/components/ui/button";
+import { Copy, Users } from "lucide-react";
+import { toast } from "@/hooks/use-toast";
 
-type Msg = { kind: "msg"; role: "user" | "assistant"; content: string } | { kind: "tool"; title: string; body: string };
+type Msg = { 
+    kind: "msg"; 
+    role: "user" | "assistant"; 
+    content: string;
+    isCommand?: boolean;
+    requiresPermission?: string;
+} | { 
+    kind: "tool"; 
+    title: string; 
+    body: string;
+};
 
 export function ChatView() {
     const { loggedIn, selectedGroup, selectGroup } = useAuth();
     const [messages, setMessages] = useState<Msg[]>([]);
     const listRef = useRef<HTMLDivElement | null>(null);
     const [typing, setTyping] = useState(false);
+    const [inviteCode, setInviteCode] = useState<string | null>(null);
+    const [userRole, setUserRole] = useState<string>('member');
+
+    // Fetch invite code and user role when group changes
+    useEffect(() => {
+        if (selectedGroup?.id) {
+            fetchGroupDetails();
+        }
+    }, [selectedGroup]);
+
+    const fetchGroupDetails = async () => {
+        if (!selectedGroup?.id) return;
+        
+        try {
+            // Fetch invite code
+            const groupResponse = await fetch(`/api/groups/${selectedGroup.id}`, {
+                credentials: 'include'
+            });
+            if (groupResponse.ok) {
+                const groupData = await groupResponse.json();
+                setInviteCode(groupData.invite_code);
+            }
+
+            // Fetch user role in this group
+            const membersResponse = await fetch(`/api/groups/${selectedGroup.id}/members`, {
+                credentials: 'include'
+            });
+            if (membersResponse.ok) {
+                const membersData = await membersResponse.json();
+                // Find current user's role
+                const currentUser = membersData.members.find((member: any) => 
+                    member.id === selectedGroup.id // This might need adjustment based on your user ID logic
+                );
+                if (currentUser) {
+                    setUserRole(currentUser.role);
+                }
+            }
+        } catch (error) {
+            console.error('Failed to fetch group details:', error);
+        }
+    };
+
+    const copyInviteCode = () => {
+        if (inviteCode) {
+            navigator.clipboard.writeText(inviteCode);
+            toast({
+                title: "Copied",
+                description: "Invite code copied to clipboard",
+            });
+        }
+    };
 
     // reset greeting when selectedGroup changes
     useEffect(() => {
@@ -37,14 +101,49 @@ export function ChatView() {
         el.scrollTo({ top: el.scrollHeight, behavior: "smooth" });
     }, [messages.length, typing]);
 
-    function addUserText(text: string) {
+    async function addUserText(text: string) {
         setMessages((prev) => [...prev, { kind: "msg", role: "user", content: text }]);
         setTyping(true);
-        // call backend/AI here; mock reply for now
-        setTimeout(() => {
-            setMessages((prev) => [...prev, { kind: "msg", role: "assistant", content: "Acknowledged." }]);
+        
+        try {
+            const response = await fetch('/api/chat', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                credentials: 'include',
+                body: JSON.stringify({
+                    message: text,
+                    groupId: selectedGroup?.id
+                })
+            });
+
+            if (!response.ok) {
+                const errorData = await response.json().catch(() => ({}));
+                console.error('Chat API error:', response.status, errorData);
+                throw new Error(`Failed to send message: ${errorData.error || response.statusText}`);
+            }
+
+            const data = await response.json();
+            
+            setMessages((prev) => [...prev, { 
+                kind: "msg", 
+                role: "assistant", 
+                content: data.response,
+                isCommand: data.isCommand,
+                requiresPermission: data.requiresPermission
+            }]);
+        } catch (error) {
+            console.error('Error sending message:', error);
+            const errorMessage = error instanceof Error ? error.message : 'Unknown error occurred';
+            setMessages((prev) => [...prev, { 
+                kind: "msg", 
+                role: "assistant", 
+                content: `Sorry, I encountered an error: ${errorMessage}. Please check the console for more details.` 
+            }]);
+        } finally {
             setTyping(false);
-        }, 900);
+        }
     }
 
     return (
@@ -57,6 +156,21 @@ export function ChatView() {
                     <h1 id="chat-title" className="text-pretty text-sm font-semibold">
                         {selectedGroup?.name || "Current Group"}
                     </h1>
+                    {inviteCode && (
+                        <div className="flex items-center gap-2">
+                            <code className="rounded bg-neutral-800 px-2 py-1 text-xs font-mono text-neutral-300">
+                                {inviteCode}
+                            </code>
+                            <Button
+                                variant="ghost"
+                                size="sm"
+                                onClick={copyInviteCode}
+                                className="h-6 w-6 p-0 text-neutral-400 hover:text-white"
+                            >
+                                <Copy className="w-3 h-3" />
+                            </Button>
+                        </div>
+                    )}
                     <Button
                         variant="outline"
                         size="sm"
@@ -66,9 +180,15 @@ export function ChatView() {
                         Switch Group
                     </Button>
                 </div>
-                <div className="flex items-center gap-2 text-xs text-neutral-400">
-                    <span className="h-2 w-2 animate-pulse rounded-full bg-teal-500" aria-hidden="true" />
-                    Online
+                <div className="flex items-center gap-2">
+                    <MembersManagement 
+                        groupId={selectedGroup?.id || ''} 
+                        isAdmin={userRole === 'admin'} 
+                    />
+                    <div className="flex items-center gap-2 text-xs text-neutral-400">
+                        <span className="h-2 w-2 animate-pulse rounded-full bg-teal-500" aria-hidden="true" />
+                        Online
+                    </div>
                 </div>
             </header>
 
@@ -76,7 +196,16 @@ export function ChatView() {
                 <div ref={listRef} className="flex-1 min-h-0 overflow-y-auto rounded-md border border-neutral-900 bg-black p-3">
                     <div className="space-y-3">
                         {messages.map((m, i) => {
-                            if (m.kind === "msg") return <ChatMessage key={i} role={m.role}>{m.content}</ChatMessage>;
+                            if (m.kind === "msg") return (
+                                <ChatMessage 
+                                    key={i} 
+                                    role={m.role}
+                                    isCommand={m.isCommand}
+                                    requiresPermission={m.requiresPermission}
+                                >
+                                    {m.content}
+                                </ChatMessage>
+                            );
                             if (m.kind === "tool") return <ToolOutput key={i} title={m.title}>{m.body}</ToolOutput>;
                             return null;
                         })}

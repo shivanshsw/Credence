@@ -7,7 +7,6 @@ import { useRouter } from "next/navigation";
 
 type User = { id?: string; name?: string | null; email?: string | null } | null;
 type Group = { id: string; name: string };
-type Invite = { id: string; group_id: string; group_name: string; role: string; status: string };
 
 interface AuthContextType {
   user: User | null;
@@ -21,9 +20,6 @@ interface AuthContextType {
   clearGroup: () => void;
   createGroup: (name: string) => Promise<string | null>;
   addMembers: (groupId: string, members: { email: string; role: string }[]) => Promise<void>;
-  invites: Invite[];
-  fetchInvites: () => Promise<void>;
-  acceptInvite: (inviteId: string) => Promise<void>;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -35,7 +31,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const sdk = useDescope();
 
   const [groups, setGroups] = useState<Group[]>([]);
-  const [invites, setInvites] = useState<Invite[]>([]);
   const [selectedGroupId, setSelectedGroupId] = useState<string | null>(() => {
     if (typeof window !== "undefined") return localStorage.getItem("selectedGroupId");
     return null;
@@ -61,40 +56,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
   };
 
-  // fetch invites (server requires cookies)
-  const fetchInvites = async () => {
-    try {
-      const res = await fetch("/api/invites", { method: "GET", credentials: "include" });
-      if (!res.ok) {
-        // log server response text for debugging
-        console.error("Failed to fetch invites:", await res.text());
-        return;
-      }
-      const data = (await res.json()) as Invite[];
-      if (Array.isArray(data)) setInvites(data);
-    } catch (err) {
-      console.error("Failed to fetch invites:", err);
-    }
-  };
-
-  // accept invite (send credentials)
-  const acceptInvite = async (inviteId: string) => {
-    try {
-      const res = await fetch(`/api/invites/${inviteId}/accept`, {
-        method: "PATCH",
-        credentials: "include",
-      });
-      if (!res.ok) {
-        console.error("Failed to accept invite:", await res.text());
-        return;
-      }
-      // Refresh lists after success
-      await fetchGroups();
-      await fetchInvites();
-    } catch (err) {
-      console.error("acceptInvite error:", err);
-    }
-  };
 
   // create group (POST) and return id
   const createGroup = async (name: string): Promise<string | null> => {
@@ -118,25 +79,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
   };
 
-  // addMembers -> send invites to server (POST)
+  // addMembers -> placeholder function (no longer needed with invite codes)
   const addMembers = async (groupId: string, members: { email: string; role: string }[]) => {
-    if (!groupId || !members?.length) return;
-    try {
-      const res = await fetch("/api/invites", {
-        method: "POST",
-        credentials: "include",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ groupId, invites: members }),
-      });
-      if (!res.ok) {
-        console.error("Failed to create invites:", await res.text());
-      } else {
-        // refresh invites list
-        await fetchInvites();
-      }
-    } catch (err) {
-      console.error("addMembers error:", err);
-    }
+    // This function is kept for backward compatibility but does nothing
+    // The new invite code system doesn't require this functionality
+    console.log("addMembers called but not implemented with new invite code system");
   };
 
   const selectGroup = (groupId: string | null) => {
@@ -163,16 +110,38 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   // fetch on login
   useEffect(() => {
-    if (isAuthenticated) {
-      fetch("/api/auth/sync", { method: "POST", credentials: "include" }).catch(() => {});
-      fetchGroups();
-      fetchInvites();
-    } else {
-      setGroups([]);
-      setInvites([]);
-      setSelectedGroupId(null);
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    const handleLogin = async () => {
+      if (isAuthenticated) {
+        try {
+          // 1. First, trigger the user sync and wait for it to complete.
+          let syncResponse = await fetch("/api/auth/sync", { method: "POST", credentials: "include" });
+          
+          // Retry sync once if it fails
+          if (!syncResponse.ok) {
+            console.warn("Initial sync failed, retrying...");
+            await new Promise(resolve => setTimeout(resolve, 1000)); // Wait 1 second
+            syncResponse = await fetch("/api/auth/sync", { method: "POST", credentials: "include" });
+          }
+          
+          if (!syncResponse.ok) {
+            const syncError = await syncResponse.text();
+            console.error("User sync failed after retry:", syncError);
+            return; // Don't proceed with fetching data if sync failed
+          }
+
+          // 2. Only after sync is successful, fetch groups.
+          await fetchGroups();
+        } catch (err) {
+          console.error("Error during initial sync and data fetch:", err);
+        }
+      } else {
+        setGroups([]);
+        setSelectedGroupId(null);
+      }
+    };
+
+    handleLogin();
+
   }, [isAuthenticated]);
 
   useEffect(() => {
@@ -200,9 +169,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     clearGroup,
     createGroup,
     addMembers,
-    invites,
-    fetchInvites,
-    acceptInvite,
   };
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
