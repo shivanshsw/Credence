@@ -8,7 +8,7 @@ import { rbacService } from '@/lib/rbac';
 const sql = neon(process.env.DATABASE_URL!);
 
 // POST: Share a note with another user
-export async function POST(request: Request, { params }: { params: { id: string } }) {
+export async function POST(request: Request, context: { params: Promise<{ id: string }> }) {
   const sessionInfo = await session();
   
   if (!sessionInfo?.token?.sub) {
@@ -16,10 +16,13 @@ export async function POST(request: Request, { params }: { params: { id: string 
   }
 
   try {
-    const { email } = await request.json();
-    
-    if (!email) {
-      return NextResponse.json({ error: 'Email is required' }, { status: 400 });
+    const { id } = await context.params;
+    const body = await request.json();
+    const tokens: string[] = Array.isArray(body?.recipients)
+      ? body.recipients
+      : (body?.recipient ? [body.recipient] : []);
+    if (!Array.isArray(tokens) || tokens.length === 0) {
+      return NextResponse.json({ error: 'Provide recipient or recipients[] (username or email)' }, { status: 400 });
     }
 
     // Get user ID
@@ -39,22 +42,34 @@ export async function POST(request: Request, { params }: { params: { id: string 
       return NextResponse.json({ error: 'Insufficient permissions' }, { status: 403 });
     }
 
-    // Find the user to share with
-    const sharedWithUser = await sql`
-      SELECT id FROM users WHERE email = ${email}
-    `;
-    
-    if (sharedWithUser.length === 0) {
-      return NextResponse.json({ error: 'User not found' }, { status: 404 });
+    // Resolve emails to user ids
+    const ids: string[] = [];
+    const notFound: string[] = [];
+    for (const token of tokens) {
+      // allow username or email
+      const rs = await sql`SELECT id FROM users WHERE email = ${token} OR username = ${token}` as { id: string }[];
+      if (rs.length) ids.push(rs[0].id); else notFound.push(token);
+    }
+    if (ids.length === 0) {
+      return NextResponse.json({ error: 'No users found for provided emails', notFound }, { status: 404 });
     }
 
-    await notesService.shareNote({
-      noteId: params.id,
-      sharedWithUserId: sharedWithUser[0].id,
-      sharedByUserId: userId
-    });
+    // Enforce same-group membership: resolve note group and ensure target users are members
+    // Share with all and mark note as shared (is_private=false). No group restriction.
+    for (const sharedWithUserId of ids) {
+      await notesService.shareNote({ noteId: id, sharedWithUserId, sharedByUserId: userId });
+    }
+    await sql`UPDATE notes SET is_private = false, updated_at = NOW() WHERE id = ${id}`;
 
-    return NextResponse.json({ success: true });
+    // audit
+    try {
+      await sql`
+        INSERT INTO audit_logs (actor_user_id, action, target_type, target_id, metadata)
+        VALUES (${userId}, 'note.share', 'note', ${id}, ${JSON.stringify({ recipients: ids.length })})
+      `;
+    } catch {}
+
+    return NextResponse.json({ success: true, sharedCount: ids.length, notFound });
 
   } catch (error) {
     console.error('Note share error:', error);

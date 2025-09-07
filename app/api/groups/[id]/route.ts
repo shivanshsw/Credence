@@ -7,7 +7,7 @@ const sql = neon(process.env.DATABASE_URL!);
 // GET: Fetch group details including invite code
 export async function GET(
     request: Request,
-    { params }: { params: { id: string } }
+    context: { params: Promise<{ id: string }> }
 ) {
     const sessionInfo = await session();
 
@@ -16,7 +16,8 @@ export async function GET(
     }
 
     try {
-        const groupId = params.id;
+        const { id } = await context.params;
+        const groupId = id;
         const descopeUserId = sessionInfo.token.sub;
 
         // 1. Verify the user is a member of this group

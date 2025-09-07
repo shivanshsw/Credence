@@ -42,7 +42,6 @@ export default function TasksPage() {
   const [formData, setFormData] = useState({
     title: "",
     description: "",
-    assignedToUserId: "",
     dueDate: "",
     priority: "medium" as 'low' | 'medium' | 'high'
   })
@@ -92,7 +91,7 @@ export default function TasksPage() {
       if (response.ok) {
         const newTask = await response.json()
         setTasks(prev => [newTask, ...prev])
-        setFormData({ title: "", description: "", assignedToUserId: "", dueDate: "", priority: "medium" })
+        setFormData({ title: "", description: "", dueDate: "", priority: "medium" })
         setIsCreateOpen(false)
       }
     } catch (error) {
@@ -190,11 +189,7 @@ export default function TasksPage() {
                   onChange={(e) => setFormData(prev => ({ ...prev, description: e.target.value }))}
                   rows={4}
                 />
-                <Input
-                  placeholder="Assigned to user ID"
-                  value={formData.assignedToUserId}
-                  onChange={(e) => setFormData(prev => ({ ...prev, assignedToUserId: e.target.value }))}
-                />
+                {/* Removed explicit user ID field; assignment handled elsewhere */}
                 <Input
                   type="date"
                   placeholder="Due date"
@@ -262,6 +257,28 @@ export default function TasksPage() {
                   <div className="flex items-start justify-between">
                     <CardTitle className="text-lg">{task.title}</CardTitle>
                     <div className="flex gap-2">
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        onClick={async () => {
+                          try {
+                            const res = await fetch('/api/google-calendar/create-event', {
+                              method: 'POST',
+                              headers: { 'Content-Type': 'application/json' },
+                              credentials: 'include',
+                              body: JSON.stringify({
+                                title: task.title,
+                                description: task.description,
+                                due_date: task.dueDate || new Date().toISOString()
+                              })
+                            })
+                            if (!res.ok) return
+                            await res.json()
+                          } catch {}
+                        }}
+                      >
+                        Add to Google Calendar
+                      </Button>
                       <Button
                         size="sm"
                         variant="ghost"

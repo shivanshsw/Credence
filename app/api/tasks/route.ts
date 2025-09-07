@@ -18,6 +18,7 @@ export async function GET(request: Request) {
   try {
     const { searchParams } = new URL(request.url);
     const groupId = searchParams.get('groupId');
+    const scope = searchParams.get('scope'); // 'self' | 'all'
 
     // Get user ID
     const users = await sql`
@@ -36,9 +37,15 @@ export async function GET(request: Request) {
       return NextResponse.json({ error: 'Insufficient permissions' }, { status: 403 });
     }
 
-    let tasks = [];
-    
-    if (groupId) {
+    let tasks = [] as any[];
+    if (scope === 'all') {
+      // Admins get all tasks
+      const isAdmin = await rbacService.userHasRole(userId, 'admin');
+      if (!isAdmin) {
+        return NextResponse.json({ error: 'Admin access required' }, { status: 403 });
+      }
+      tasks = await tasksService.getAllTasks();
+    } else if (groupId) {
       tasks = await tasksService.getTasksForGroup(groupId);
     } else {
       tasks = await tasksService.getTasksForUser(userId);
@@ -62,9 +69,8 @@ export async function POST(request: Request) {
 
   try {
     const { title, description, assignedToUserId, groupId, dueDate, priority } = await request.json();
-    
-    if (!title || !description || !assignedToUserId || !groupId) {
-      return NextResponse.json({ error: 'Title, description, assignedToUserId, and groupId are required' }, { status: 400 });
+    if (!title || !description) {
+      return NextResponse.json({ error: 'Title and description are required' }, { status: 400 });
     }
 
     // Get user ID
@@ -84,15 +90,30 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: 'Insufficient permissions' }, { status: 403 });
     }
 
+    // Resolve defaults
+    const resolvedAssignedTo = assignedToUserId || userId;
+    const resolvedGroupId = groupId || null;
+    if (!resolvedGroupId) {
+      return NextResponse.json({ error: 'groupId is required' }, { status: 400 });
+    }
+
     const task = await tasksService.createTask({
       title,
       description,
-      assignedToUserId,
+      assignedToUserId: resolvedAssignedTo,
       assignedByUserId: userId,
-      groupId,
+      groupId: resolvedGroupId,
       dueDate,
       priority
     });
+
+    // audit
+    try {
+      await sql`
+        INSERT INTO audit_logs (actor_user_id, action, target_type, target_id, metadata)
+        VALUES (${userId}, 'task.create', 'task', ${task.id}, ${JSON.stringify({ groupId: resolvedGroupId })})
+      `;
+    } catch {}
 
     return NextResponse.json(task, { status: 201 });
 

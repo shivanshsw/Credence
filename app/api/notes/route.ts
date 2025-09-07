@@ -37,7 +37,6 @@ export async function GET(request: Request) {
     }
 
     let notes = [];
-    
     if (type === 'all') {
       const [privateNotes, sharedNotes] = await Promise.all([
         notesService.getNotesForUser(userId),

@@ -42,12 +42,22 @@ export async function POST() {
 
         // Check if user exists
         const existingUsers = await sql`
-            SELECT descope_user_id, email, name FROM users WHERE descope_user_id = ${descopeUserId}
+            SELECT descope_user_id, email, name, username FROM users WHERE descope_user_id = ${descopeUserId}
         `;
 
         if (existingUsers.length === 0) {
+            // derive unique username
+            const base = (name || email || 'user').split('@')[0].replace(/[^a-zA-Z0-9]/g, '').toLowerCase() || 'user';
+            let username = base;
+            let tries = 0;
+            while (tries < 5) {
+                const exists = await sql`SELECT 1 FROM users WHERE username = ${username} LIMIT 1`;
+                if (!exists.length) break;
+                username = base + Math.floor(1000 + Math.random() * 9000).toString();
+                tries++;
+            }
             await sql`
-                INSERT INTO users (descope_user_id, email, name) VALUES (${descopeUserId}, ${email}, ${name})
+                INSERT INTO users (descope_user_id, email, name, username) VALUES (${descopeUserId}, ${email}, ${name}, ${username})
             `;
             console.log(`✅ New user created in database: ${name} (${email})`);
         } else {

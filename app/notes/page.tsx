@@ -32,7 +32,7 @@ export default function NotesPage() {
   const [selectedNote, setSelectedNote] = useState<Note | null>(null)
   const [isCreateOpen, setIsCreateOpen] = useState(false)
   const [isShareOpen, setIsShareOpen] = useState(false)
-  const [shareEmail, setShareEmail] = useState("")
+  const [shareEmails, setShareEmails] = useState("")
 
   // Form state for creating/editing notes
   const [formData, setFormData] = useState({
@@ -71,7 +71,7 @@ export default function NotesPage() {
           'Content-Type': 'application/json',
         },
         credentials: 'include',
-        body: JSON.stringify(formData)
+        body: JSON.stringify({ ...formData })
       })
 
       if (response.ok) {
@@ -86,7 +86,7 @@ export default function NotesPage() {
   }
 
   const shareNote = async () => {
-    if (!selectedNote || !shareEmail) return
+    if (!selectedNote || !shareEmails) return
 
     try {
       const response = await fetch(`/api/notes/${selectedNote.id}/share`, {
@@ -95,16 +95,37 @@ export default function NotesPage() {
           'Content-Type': 'application/json',
         },
         credentials: 'include',
-        body: JSON.stringify({ email: shareEmail })
+        body: JSON.stringify({ emails: shareEmails.split(',').map(e => e.trim()).filter(Boolean) })
       })
 
       if (response.ok) {
-        setShareEmail("")
+        setShareEmails("")
         setIsShareOpen(false)
         // Show success message
+      } else {
+        const err = await response.json().catch(() => ({} as any))
+        alert(`Share failed: ${err.error || 'Unknown error'}`)
       }
     } catch (error) {
       console.error('Error sharing note:', error)
+      alert('Share failed. Check console for details.')
+    }
+  }
+  
+  const copyNote = async (noteId: string) => {
+    try {
+      const res = await fetch('/api/notes/copy', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({ note_id: noteId })
+      })
+      if (res.ok) {
+        const newNote = await res.json()
+        setNotes(prev => [newNote, ...prev])
+      }
+    } catch (e) {
+      console.error('Copy note error', e)
     }
   }
 
@@ -222,6 +243,11 @@ export default function NotesPage() {
                           >
                             <Share2 className="h-4 w-4" />
                           </Button>
+                          {!note.isPrivate && (
+                            <Button size="sm" variant="ghost" onClick={() => copyNote(note.id)}>
+                              Copy
+                            </Button>
+                          )}
                           <Button
                             size="sm"
                             variant="ghost"
@@ -263,9 +289,9 @@ export default function NotesPage() {
             </DialogHeader>
             <div className="space-y-4">
               <Input
-                placeholder="Enter email address"
-                value={shareEmail}
-                onChange={(e) => setShareEmail(e.target.value)}
+                placeholder="Enter comma-separated usernames or emails"
+                value={shareEmails}
+                onChange={(e) => setShareEmails(e.target.value)}
               />
               <Button onClick={shareNote} className="w-full">
                 Share Note

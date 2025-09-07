@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { session } from '@descope/nextjs-sdk/server';
 import { neon } from '@neondatabase/serverless';
+import { supabaseAdmin, GROUP_FILES_BUCKET } from '@/lib/supabase';
 
 // This initializes the Neon database client
 const sql = neon(process.env.DATABASE_URL!);
@@ -148,6 +149,17 @@ export async function POST(request: Request) {
         await sql`
             INSERT INTO group_members (group_id, user_id, role) VALUES (${newGroup.id}, ${userId}, 'admin')
         `;
+
+        // 5. Create a placeholder folder in Supabase storage: group-<id>/
+        try {
+            const folderKey = `group-${newGroup.id}/.keep`;
+            await supabaseAdmin.storage.from(GROUP_FILES_BUCKET).upload(folderKey, new Blob([new Uint8Array()]), {
+                contentType: 'application/octet-stream',
+                upsert: true,
+            });
+        } catch (e) {
+            console.warn('Supabase folder create failed (non-fatal):', e);
+        }
 
         // --- END OF LOGIC ---
 

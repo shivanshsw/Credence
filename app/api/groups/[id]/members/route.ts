@@ -6,7 +6,7 @@ const sql = neon(process.env.DATABASE_URL!);
 
 export async function GET(
   request: Request,
-  { params }: { params: { id: string } }
+  context: { params: Promise<{ id: string }> }
 ) {
   const sessionInfo = await session();
 
@@ -16,7 +16,8 @@ export async function GET(
 
   try {
     const descopeUserId = sessionInfo.token.sub;
-    const groupId = params.id;
+    const { id } = await context.params;
+    const groupId = id;
 
     // Get user's internal ID
     const users = await sql`
@@ -85,7 +86,7 @@ export async function GET(
 
 export async function PATCH(
   request: Request,
-  { params }: { params: { id: string } }
+  context: { params: Promise<{ id: string }> }
 ) {
   const sessionInfo = await session();
 
@@ -95,7 +96,8 @@ export async function PATCH(
 
   try {
     const descopeUserId = sessionInfo.token.sub;
-    const groupId = params.id;
+    const { id } = await context.params;
+    const groupId = id;
     const { member_user_id, new_role } = await request.json();
     
     console.log(`🔄 PATCH request - Group ID: ${groupId}, Member User ID: ${member_user_id}, New Role: ${new_role}`);
@@ -180,7 +182,7 @@ export async function PATCH(
 
 export async function DELETE(
   request: Request,
-  { params }: { params: { id: string } }
+  context: { params: Promise<{ id: string }> }
 ) {
   const sessionInfo = await session();
 
@@ -190,7 +192,8 @@ export async function DELETE(
 
   try {
     const descopeUserId = sessionInfo.token.sub;
-    const groupId = params.id;
+    const { id } = await context.params;
+    const groupId = id;
     const { member_user_id } = await request.json();
 
     if (!member_user_id) {

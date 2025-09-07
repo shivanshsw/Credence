@@ -30,6 +30,7 @@ CREATE TABLE IF NOT EXISTS notes (
     title TEXT NOT NULL,
     content TEXT,
     author_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    group_id UUID REFERENCES groups(id) ON DELETE CASCADE,
     is_private BOOLEAN DEFAULT true,
     created_at TIMESTAMPTZ DEFAULT NOW(),
     updated_at TIMESTAMPTZ DEFAULT NOW()
@@ -166,8 +167,56 @@ INSERT INTO role_permissions (role, permission_name) VALUES
 ('intern', 'calendar:read')
 ON CONFLICT (role, permission_name) DO NOTHING;
 
+-- Group files for uploads (per-group storage metadata)
+CREATE TABLE IF NOT EXISTS group_files (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    group_id UUID NOT NULL REFERENCES groups(id) ON DELETE CASCADE,
+    uploader_user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    file_name TEXT NOT NULL,
+    mime_type TEXT,
+    size_bytes BIGINT,
+    storage_url TEXT NOT NULL,
+    created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_group_files_group_id ON group_files(group_id);
+CREATE INDEX IF NOT EXISTS idx_group_files_uploader ON group_files(uploader_user_id);
+
+-- Ensure tasks has is_completed
+DO $$
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1 FROM information_schema.columns 
+        WHERE table_name = 'tasks' AND column_name = 'is_completed'
+    ) THEN
+        ALTER TABLE tasks ADD COLUMN is_completed BOOLEAN DEFAULT FALSE;
+    END IF;
+END $$;
+
+-- Create group-specific role permissions table
+CREATE TABLE IF NOT EXISTS group_role_permissions (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    group_id UUID NOT NULL REFERENCES groups(id) ON DELETE CASCADE,
+    role TEXT NOT NULL,
+    permission_name TEXT NOT NULL REFERENCES permissions(name) ON DELETE CASCADE,
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    UNIQUE(group_id, role, permission_name)
+);
+
+-- Create group-specific custom permissions table
+CREATE TABLE IF NOT EXISTS group_custom_permissions (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    group_id UUID NOT NULL REFERENCES groups(id) ON DELETE CASCADE,
+    role TEXT NOT NULL,
+    custom_permission_text TEXT,
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    updated_at TIMESTAMPTZ DEFAULT NOW(),
+    UNIQUE(group_id, role)
+);
+
 -- Create indexes for better performance
 CREATE INDEX IF NOT EXISTS idx_notes_author_id ON notes(author_id);
+CREATE INDEX IF NOT EXISTS idx_notes_group_id ON notes(group_id);
 CREATE INDEX IF NOT EXISTS idx_notes_is_private ON notes(is_private);
 CREATE INDEX IF NOT EXISTS idx_note_shares_note_id ON note_shares(note_id);
 CREATE INDEX IF NOT EXISTS idx_note_shares_shared_with ON note_shares(shared_with_user_id);
@@ -178,3 +227,18 @@ CREATE INDEX IF NOT EXISTS idx_group_members_group_id ON group_members(group_id)
 CREATE INDEX IF NOT EXISTS idx_group_members_user_id ON group_members(user_id);
 CREATE INDEX IF NOT EXISTS idx_role_permissions_role ON role_permissions(role);
 CREATE INDEX IF NOT EXISTS idx_users_role ON users(role);
+CREATE INDEX IF NOT EXISTS idx_group_role_permissions_group_id ON group_role_permissions(group_id);
+CREATE INDEX IF NOT EXISTS idx_group_custom_permissions_group_id ON group_custom_permissions(group_id);
+
+-- Audit logs and display_name support
+ALTER TABLE users ADD COLUMN IF NOT EXISTS display_name TEXT UNIQUE;
+
+CREATE TABLE IF NOT EXISTS audit_logs (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  event_type TEXT NOT NULL,
+  details JSONB,
+  created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_audit_logs_user_id ON audit_logs(user_id);

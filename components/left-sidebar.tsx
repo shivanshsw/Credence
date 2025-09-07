@@ -15,7 +15,6 @@ const NAV = [
   { href: "/calendar", icon: Calendar, label: "Calendar" },
   { href: "/notes", icon: FileText, label: "Notes" },
   { href: "/tasks", icon: CheckSquare, label: "Tasks" },
-  { href: "/admin", icon: Shield, label: "Admin" },
   { href: "/?view=security", icon: Shield, label: "Security" },
   { href: "/?view=settings", icon: Settings, label: "Settings" },
 ]

@@ -6,6 +6,8 @@ const sql = neon(process.env.DATABASE_URL!);
 export interface UserPermissions {
   role: string;
   permissions: string[];
+  groupPermissions?: string[];
+  customPermissionText?: string;
 }
 
 export class RBACService {
@@ -71,6 +73,30 @@ export class RBACService {
       return userPermissions.permissions.includes(permission);
     } catch (error) {
       console.error('Error checking permission:', error);
+      return false;
+    }
+  }
+
+  async userHasRole(userId: string, role: string): Promise<boolean> {
+    try {
+      const result = await sql`
+        SELECT 1 FROM users WHERE id = ${userId} AND role = ${role}
+      `;
+      return result.length > 0;
+    } catch (error) {
+      console.error('Error checking user role:', error);
+      return false;
+    }
+  }
+
+  async userHasGroupRole(userId: string, groupId: string, role: string): Promise<boolean> {
+    try {
+      const result = await sql`
+        SELECT 1 FROM group_members WHERE user_id = ${userId} AND group_id = ${groupId} AND role = ${role}
+      `;
+      return result.length > 0;
+    } catch (error) {
+      console.error('Error checking group role:', error);
       return false;
     }
   }
@@ -150,6 +176,47 @@ export class RBACService {
     } catch (error) {
       console.error('Error updating user role:', error);
       throw error;
+    }
+  }
+
+  async getUserGroupPermissions(userId: string, groupId: string): Promise<{
+    groupPermissions: string[];
+    customPermissionText: string;
+  }> {
+    try {
+      // Get user's role in the group
+      const groupRole = await sql`
+        SELECT role FROM group_members 
+        WHERE group_id = ${groupId} AND user_id = ${userId}
+      ` as { role: string }[];
+
+      if (groupRole.length === 0) {
+        return { groupPermissions: [], customPermissionText: '' };
+      }
+
+      const role = groupRole[0].role;
+
+      // Get group-specific permissions for this role
+      const groupPermissions = await sql`
+        SELECT permission_name 
+        FROM group_role_permissions 
+        WHERE group_id = ${groupId} AND role = ${role}
+      ` as { permission_name: string }[];
+
+      // Get custom permission text for this role
+      const customPermission = await sql`
+        SELECT custom_permission_text 
+        FROM group_custom_permissions 
+        WHERE group_id = ${groupId} AND role = ${role}
+      ` as { custom_permission_text: string }[];
+
+      return {
+        groupPermissions: groupPermissions.map(p => p.permission_name),
+        customPermissionText: customPermission[0]?.custom_permission_text || ''
+      };
+    } catch (error) {
+      console.error('Error fetching group permissions:', error);
+      return { groupPermissions: [], customPermissionText: '' };
     }
   }
 }

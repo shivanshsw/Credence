@@ -3,6 +3,7 @@
 
 -- Users table (already exists, but adding role column)
 ALTER TABLE users ADD COLUMN IF NOT EXISTS role TEXT DEFAULT 'employee';
+ALTER TABLE users ADD COLUMN IF NOT EXISTS username TEXT UNIQUE;
 
 -- Permissions table
 CREATE TABLE IF NOT EXISTS permissions (
@@ -116,7 +117,7 @@ INSERT INTO role_permissions (role, permission_name) VALUES
 ('admin', 'task_assignment:read'),
 ('admin', 'task_assignment:update'),
 ('admin', 'notes:create'),
-('notes', 'notes:read'),
+('admin', 'notes:read'),
 ('admin', 'notes:share'),
 ('admin', 'notes:delete'),
 ('admin', 'calendar:read'),
@@ -162,3 +163,33 @@ CREATE INDEX IF NOT EXISTS idx_tasks_assigned_to ON tasks(assigned_to_user_id);
 CREATE INDEX IF NOT EXISTS idx_tasks_group_id ON tasks(group_id);
 CREATE INDEX IF NOT EXISTS idx_chat_messages_group_id ON chat_messages(group_id);
 CREATE INDEX IF NOT EXISTS idx_role_permissions_role ON role_permissions(role);
+
+-- Uploaded files for groups (GCS-backed)
+CREATE TABLE IF NOT EXISTS uploaded_files (
+    file_id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    group_id UUID NOT NULL REFERENCES groups(id) ON DELETE CASCADE,
+    uploader_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    title TEXT NOT NULL,
+    description TEXT,
+    file_url TEXT NOT NULL,
+    storage_path TEXT NOT NULL,
+    uploaded_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_uploaded_files_group ON uploaded_files(group_id);
+CREATE INDEX IF NOT EXISTS idx_uploaded_files_title_desc ON uploaded_files USING GIN (to_tsvector('english', coalesce(title,'') || ' ' || coalesce(description,'')));
+CREATE INDEX IF NOT EXISTS idx_uploaded_files_storage_path ON uploaded_files(storage_path);
+CREATE INDEX IF NOT EXISTS idx_uploaded_files_title ON uploaded_files(title);
+
+-- Audit logs
+CREATE TABLE IF NOT EXISTS audit_logs (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    actor_user_id UUID REFERENCES users(id) ON DELETE SET NULL,
+    action TEXT NOT NULL,
+    target_type TEXT,
+    target_id TEXT,
+    metadata JSONB,
+    created_at TIMESTAMPTZ DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS idx_audit_logs_actor ON audit_logs(actor_user_id);
+CREATE INDEX IF NOT EXISTS idx_audit_logs_action ON audit_logs(action);

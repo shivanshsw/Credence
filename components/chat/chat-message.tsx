@@ -50,6 +50,20 @@ export function ChatMessage({
           </div>
         )}
         {children}
+        {requiresPermission === 'permission_denied' && !isUser && (
+          <div className="mt-3">
+            <button
+              className="inline-flex items-center rounded-md bg-teal-600 px-3 py-1.5 text-xs font-medium text-black hover:bg-teal-500"
+              onClick={() => {
+                // Placeholder action: would notify group admin
+                console.log('Request Access clicked');
+                try { alert('Access request sent to group admin (placeholder).'); } catch {}
+              }}
+            >
+              Request Access
+            </button>
+          </div>
+        )}
       </div>
       {isUser && (
         <Avatar className="h-7 w-7">

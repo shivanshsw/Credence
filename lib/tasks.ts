@@ -16,6 +16,7 @@ export interface Task {
   dueDate: string | null;
   priority: 'low' | 'medium' | 'high';
   status: 'pending' | 'in_progress' | 'completed' | 'cancelled';
+  // derived from status or explicit
   createdAt: string;
   updatedAt: string;
 }
@@ -152,6 +153,44 @@ export class TasksService {
       }));
     } catch (error) {
       console.error('Error fetching group tasks:', error);
+      throw error;
+    }
+  }
+
+  async getAllTasks(): Promise<Task[]> {
+    try {
+      const result = await sql`
+        SELECT 
+          t.id, t.title, t.description, t.assigned_to_user_id, t.assigned_by_user_id, 
+          t.group_id, t.due_date, t.priority, t.status, t.created_at, t.updated_at,
+          u1.name as assigned_to_name,
+          u2.name as assigned_by_name,
+          g.name as group_name
+        FROM tasks t
+        JOIN users u1 ON t.assigned_to_user_id = u1.id
+        JOIN users u2 ON t.assigned_by_user_id = u2.id
+        JOIN groups g ON t.group_id = g.id
+        ORDER BY t.created_at DESC
+      `;
+
+      return result.map(task => ({
+        id: task.id,
+        title: task.title,
+        description: task.description,
+        assignedToUserId: task.assigned_to_user_id,
+        assignedToUserName: task.assigned_to_name,
+        assignedByUserId: task.assigned_by_user_id,
+        assignedByUserName: task.assigned_by_name,
+        groupId: task.group_id,
+        groupName: task.group_name,
+        dueDate: task.due_date,
+        priority: task.priority,
+        status: task.status,
+        createdAt: task.created_at,
+        updatedAt: task.updated_at
+      }));
+    } catch (error) {
+      console.error('Error fetching all tasks:', error);
       throw error;
     }
   }

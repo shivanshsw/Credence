@@ -11,6 +11,8 @@ console.log("Gemini API Key loaded?", !!GEMINI_API_KEY);
 export interface UserPermissions {
   role: string;
   permissions: string[];
+  groupPermissions?: string[];
+  customPermissionText?: string;
 }
 
 export interface ChatContext {
@@ -21,12 +23,34 @@ export interface ChatContext {
     role: "user" | "assistant";
     content: string;
   }>;
+  tasks?: Array<{
+    title: string;
+    dueDate: string | null;
+    groupName: string;
+    status: string;
+  }>;
+  files?: Array<{
+    file_name: string;
+    mime_type: string | null;
+    created_at: string;
+  }>;
+  ragSnippets?: Array<{
+    fileName: string;
+    snippet: string;
+  }>;
+  ragFileUris?: Array<{
+    fileName: string;
+    uri: string;
+    mimeType: string;
+  }>;
 }
 
 export interface TaskAssignment {
   title: string;
   description: string;
-  assignedTo: string[];
+  assignedTo: string[]; // usernames or emails or special keywords
+  assignToAllMembers?: boolean;
+  assignToRole?: string; // e.g., 'manager', 'member'
   dueDate: string;
   priority: "low" | "medium" | "high";
   groupId: string;
@@ -47,11 +71,29 @@ export class GeminiService {
     try {
       const combinedPrompt = `${systemPrompt}\n\nUser: ${userMessage}`;
 
-      // ✅ New SDK call
-      const result = await ai.models.generateContent({
-        model: "gemini-2.5-flash",
-        contents: combinedPrompt,
-      });
+      let result;
+      if (context.ragFileUris && context.ragFileUris.length > 0) {
+        // Send as structured content with file parts so Gemini can read them directly
+        const parts: any[] = [{ text: combinedPrompt }];
+        for (const f of context.ragFileUris.slice(0, 5)) {
+          parts.push({ fileData: { fileUri: f.uri, mimeType: f.mimeType } });
+        }
+        result = await ai.models.generateContent({
+          model: "gemini-2.5-flash",
+          contents: [
+            {
+              role: "user",
+              parts,
+            },
+          ],
+        });
+      } else {
+        // Fallback to plain text prompt
+        result = await ai.models.generateContent({
+          model: "gemini-2.5-flash",
+          contents: combinedPrompt,
+        });
+      }
 
       const text = result.text;
 
@@ -69,42 +111,85 @@ export class GeminiService {
 
   private buildSystemPrompt(context: ChatContext): string {
     const permissionsList = context.userPermissions.permissions.join(", ");
-
-    return `You are an AI assistant for the Credence MCP platform. You help users with their work tasks while respecting their role-based permissions.
+    const groupPermissionsList = context.userPermissions.groupPermissions?.join(", ") || "";
+    
+    // Build the base prompt
+    let prompt = `You are an AI assistant for the Credence MCP platform. You help users with their work tasks while respecting their role-based permissions.
 
 USER CONTEXT:
 - Current Group: ${context.groupName}
 - User Role: ${context.userPermissions.role}
-- User Permissions: ${permissionsList}
+- User Permissions: ${permissionsList}`;
 
-PERMISSION RULES:
+    // Add group-specific permissions if they exist
+    if (groupPermissionsList) {
+      prompt += `\n- Group-Specific Permissions: ${groupPermissionsList}`;
+    }
+
+    // Add custom permission text with HIGH PRIORITY if it exists
+    if (context.userPermissions.customPermissionText) {
+      prompt += `\n\n🚨 HIGH PRIORITY - CUSTOM GROUP PERMISSIONS (OVERRIDES ALL OTHER RESTRICTIONS):
+${context.userPermissions.customPermissionText}
+
+IMPORTANT: The above custom permissions text has HIGHEST PRIORITY and can override standard permission restrictions. Follow these custom permissions even if they conflict with standard permissions.`;
+    }
+
+    prompt += `\n\nPERMISSION RULES:
 - Only provide information or perform actions that the user's permissions allow
 - If a user requests something they don't have permission for, explain what permission they need
 - Always be helpful but security-conscious
+- CUSTOM GROUP PERMISSIONS (if provided above) have HIGHEST PRIORITY and override standard restrictions
 
-AVAILABLE COMMANDS:
+AVAILABLE COMMANDS AND CAPABILITIES:
 1. Task Assignment: "Assign [task] to [users] by [date]"
 2. Calendar Management: "Schedule [event] for [date/time]"
 3. Notes: "Create note about [topic]", "Share note with [user]"
 4. Data Access: "Show [data type]" (based on permissions)
+5. File Reading: When file text is provided in FILE CONTEXT or when the user uses "file: <name>", you CAN read, summarize, extract, and answer questions directly from that content. Do not claim a lack of a specific command.
 
 RESPONSE FORMAT:
 - For regular chat: Respond naturally
 - For commands: Start with "COMMAND:" followed by JSON
 - For permission denials: Start with "PERMISSION_DENIED:" followed by explanation
+ - For file access requests: If file text is provided in FILE CONTEXT, quote, summarize, and extract as needed. If only a signed link is provided, acknowledge the link and avoid claiming you cannot access files.
 
 FORMATTING RULES:
 - Use **double asterisks** for bold text (example: **bold**)
 - Use *single asterisk* for italics (example: *italic*)
 - Use \\n for new lines
 - Do not use any other markdown or formatting styles
+
 Example command response:
 COMMAND: {"type": "task_assignment", "title": "Q3 Report", "description": "Complete quarterly report", "assignedTo": ["user1@email.com", "user2@email.com"], "dueDate": "2024-01-15", "priority": "high", "groupId": "${context.groupId}"}
 
 Example permission denial:
 PERMISSION_DENIED: You need 'finance_data:read' permission to access financial reports. Please contact your manager to request this access.
 
-Remember: Always respect the user's current permissions and role.`;
+Remember: Always respect the user's current permissions and role. CUSTOM GROUP PERMISSIONS have HIGHEST PRIORITY.`;
+
+    // Add a compact snapshot of the user's tasks (or all tasks for admins)
+    if (context.tasks && context.tasks.length > 0) {
+      const taskLines = context.tasks.slice(0, 20).map(t => `- [${t.status}] ${t.title} (${t.groupName}) ${t.dueDate ? `due ${t.dueDate}` : ''}`);
+      prompt += `\n\nTASKS SNAPSHOT (for context):\n${taskLines.join("\n")}`;
+    }
+
+    // Add a compact snapshot of available group files
+    if (context.files && context.files.length > 0) {
+      const fileLines = context.files.slice(0, 10).map(f => `- ${f.file_name} (${f.mime_type || 'file'}) uploaded ${f.created_at}`);
+      prompt += `\n\nGROUP FILES SNAPSHOT (for context):\n${fileLines.join("\n")}`;
+    }
+
+    // Include file-derived snippets or links
+    if (context.ragSnippets && context.ragSnippets.length > 0) {
+      const snippetLines = context.ragSnippets
+        .slice(0, 5)
+        .map(s => `---\nFILE: ${s.fileName}\nCONTENT:\n${s.snippet}`)
+        .join("\n\n");
+
+      prompt += `\n\nWHEN FILE CONTEXT PROVIDED:\n- The following file-derived snippets or links may be included to help you answer.\n- If a snippet contains actual text content, prioritize answering directly from it.\n- If only a signed URL is provided, do NOT claim to have read the file. Instead, answer based on filename and available metadata.\n- When text is present, you may summarize, extract facts, compute, or answer questions directly from that text.\n- Summarize long content in 5-8 bullet points with key figures and dates when asked; always cite the source filename.\n- IMPORTANT: If file snippets are provided, DO NOT say you cannot access the file. You HAVE the file text provided above; use it.\n- If the user asks to "summarize", "quote", "extract", or "show" content from a file and FILE CONTEXT is available, comply directly using that text.\n\nFILE CONTEXT:\n${snippetLines}`;
+    }
+
+    return prompt;
   }
 
   private parseResponse(
@@ -128,7 +213,9 @@ Remember: Always respect the user's current permissions and role.`;
             taskAssignment: {
               title: commandData.title,
               description: commandData.description,
-              assignedTo: commandData.assignedTo,
+              assignedTo: commandData.assignedTo || [],
+              assignToAllMembers: commandData.assignToAllMembers || false,
+              assignToRole: commandData.assignToRole || undefined,
               dueDate: commandData.dueDate,
               priority: commandData.priority,
               groupId: context.groupId,
@@ -154,6 +241,19 @@ Remember: Always respect the user's current permissions and role.`;
     };
   }
 
+  async uploadFileToGemini(params: {
+    data: Buffer;
+    mimeType: string;
+    displayName: string;
+  }): Promise<{ uri: string; mimeType: string; fileName: string }> {
+    const uploaded = await ai.files.upload({
+      file: { data: params.data, mimeType: params.mimeType, displayName: params.displayName },
+    } as any);
+    const uri = (uploaded as any)?.file?.uri ?? (uploaded as any)?.uri ?? '';
+    if (!uri) throw new Error('Failed to upload file to Gemini');
+    return { uri, mimeType: params.mimeType, fileName: params.displayName };
+  }
+
   async generateNotesSummary(
       notes: Array<{ title: string; content: string; author: string }>
   ): Promise<string> {
@@ -177,6 +277,26 @@ Remember: Always respect the user's current permissions and role.`;
     } catch (error) {
       console.error("Gemini API error:", error);
       return "Unable to generate summary at this time.";
+    }
+  }
+
+  async summarizeLongText(rawText: string, options?: { title?: string; targetTokens?: number }): Promise<string> {
+    const title = options?.title || "Document";
+    const truncated = rawText.slice(0, 220 * 1024);
+    const prompt = `You are given a document titled "${title}". Produce a concise summary capturing:
+- Key objectives, decisions, deadlines, owners, figures, and dates
+- Any risks, blockers, and next steps
+- Keep it under 15 bullet points total
+Use plain text with bullets (- ). If content appears tabular, flatten key cells.
+\n\nDOCUMENT (truncated):\n${truncated}`;
+    try {
+      const result = await ai.models.generateContent({
+        model: "gemini-2.5-flash",
+        contents: prompt,
+      });
+      return (result.text || "").trim();
+    } catch (e) {
+      return "";
     }
   }
 }
