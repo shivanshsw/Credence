@@ -141,7 +141,12 @@ IMPORTANT: The above custom permissions text has HIGHEST PRIORITY and can overri
 - CUSTOM GROUP PERMISSIONS (if provided above) have HIGHEST PRIORITY and override standard restrictions
 
 AVAILABLE COMMANDS AND CAPABILITIES:
-1. Task Assignment: "Assign [task] to [users] by [date]"
+1. Task Assignment: 
+   - "Assign [task] to [users] by [date]"
+   - "assign:[task_name] to role:[role_name] for date <date>"
+   - "assign task: [task_name] to all role: [role_name] for [date]"
+   - "assign: [task_name] to role: [role_name] for [date]"
+   - Any variation with "assign", "task:", "role:", "date" keywords
 2. Calendar Management: "Schedule [event] for [date/time]"
 3. Notes: "Create note about [topic]", "Share note with [user]"
 4. Data Access: "Show [data type]" (based on permissions)
@@ -159,8 +164,32 @@ FORMATTING RULES:
 - Use \n for new lines
 - You may include 1-3 relevant emoji to enhance clarity (e.g., ✅📌📅), but keep them tasteful and relevant to the answer length.
 
-Example command response:
+TASK ASSIGNMENT DETECTION:
+When users mention task assignment, look for these patterns and respond with COMMAND: JSON:
+- "assign: [task_name] to role: [role_name] for date [date]"
+- "assign task: [task_name] to all role: [role_name] for [date]"
+- "assign: [task_name] to role: [role_name] for [date]"
+- "task: [task_name] to role: [role_name] for date [date]"
+- "assign [task_name] to role [role_name] for date [date]"
+- "assign [task_name] to all role [role_name] for date [date]"
+
+EXTRACTION RULES:
+- Extract task name from after "assign:" or "assign task:" or "task:"
+- Extract role from after "role:" (e.g., "members", "managers", "admin", "employee")
+- Extract date from after "for date", "for [date]", "by [date]", or similar patterns
+- If role is specified, set assignToRole to that role
+- If "all" is mentioned with a role, set assignToAllMembers to true
+- Default priority to "medium" if not specified
+- Default description to "Task assigned via chat" if not provided
+
+RESPONSE FORMAT:
+When you detect a task assignment pattern, respond with:
+COMMAND: {"type": "task_assignment", "title": "[extracted_task_name]", "description": "Task assigned via chat", "assignToRole": "[extracted_role]", "dueDate": "[parsed_date]", "priority": "medium", "groupId": "${context.groupId}"}
+
+Example command responses:
 COMMAND: {"type": "task_assignment", "title": "Q3 Report", "description": "Complete quarterly report", "assignedTo": ["user1@email.com", "user2@email.com"], "dueDate": "2024-01-15", "priority": "high", "groupId": "${context.groupId}"}
+
+COMMAND: {"type": "task_assignment", "title": "Complete documentation", "description": "Task assigned via chat", "assignToRole": "members", "dueDate": "2024-01-15", "priority": "medium", "groupId": "${context.groupId}"}
 
 Example permission denial:
 PERMISSION_DENIED: You need 'finance_data:read' permission to access financial reports. Please contact your manager to request this access.
@@ -227,6 +256,16 @@ Remember: Always respect the user's current permissions and role. CUSTOM GROUP P
       }
     }
 
+    // Enhanced task assignment detection for natural language patterns
+    const taskAssignment = this.detectTaskAssignment(trimmed, context);
+    if (taskAssignment) {
+      return {
+        response: `I'll assign the task "${taskAssignment.title}" to the specified users.`,
+        isCommand: true,
+        taskAssignment: taskAssignment,
+      };
+    }
+
     if (trimmed.startsWith("PERMISSION_DENIED:")) {
       return {
         response: trimmed.replace("PERMISSION_DENIED:", "").trim(),
@@ -239,6 +278,87 @@ Remember: Always respect the user's current permissions and role. CUSTOM GROUP P
       response: trimmed,
       isCommand: false,
     };
+  }
+
+  private detectTaskAssignment(text: string, context: ChatContext): TaskAssignment | null {
+    // Enhanced patterns for task assignment detection
+    const patterns = [
+      // Pattern 1: assign:task_name to role:role_name for date <date>
+      /assign:\s*([^:]+?)\s+to\s+role:\s*([^\s]+?)(?:\s+for\s+date\s+([^\s]+))?/i,
+      // Pattern 2: assign task: task_name to all role: role_name for date <date>
+      /assign\s+task:\s*([^:]+?)\s+to\s+all\s+role:\s*([^\s]+?)(?:\s+for\s+date\s+([^\s]+))?/i,
+      // Pattern 3: assign: task_name to role: role_name for [date]
+      /assign:\s*([^:]+?)\s+to\s+role:\s*([^\s]+?)(?:\s+for\s+([^\s]+))?/i,
+      // Pattern 4: task: task_name to role: role_name for date <date>
+      /task:\s*([^:]+?)\s+to\s+role:\s*([^\s]+?)(?:\s+for\s+date\s+([^\s]+))?/i,
+      // Pattern 5: assign task_name to role role_name for date <date>
+      /assign\s+([^:]+?)\s+to\s+role\s+([^\s]+?)(?:\s+for\s+date\s+([^\s]+))?/i,
+      // Pattern 6: assign task_name to all role role_name for date <date>
+      /assign\s+([^:]+?)\s+to\s+all\s+role\s+([^\s]+?)(?:\s+for\s+date\s+([^\s]+))?/i,
+    ];
+
+    for (const pattern of patterns) {
+      const match = text.match(pattern);
+      if (match) {
+        const taskName = match[1].trim();
+        const roleName = match[2].trim();
+        const dateStr = match[3]?.trim();
+
+        // Normalize role names
+        const normalizedRole = this.normalizeRoleName(roleName);
+        
+        // Parse date if provided
+        let dueDate = null;
+        if (dateStr) {
+          dueDate = this.parseDate(dateStr);
+        }
+
+        return {
+          title: taskName,
+          description: "Task assigned via chat",
+          assignedTo: [],
+          assignToAllMembers: text.toLowerCase().includes('all'),
+          assignToRole: normalizedRole,
+          dueDate: dueDate,
+          priority: "medium",
+          groupId: context.groupId,
+        };
+      }
+    }
+
+    return null;
+  }
+
+  private normalizeRoleName(roleName: string): string {
+    const roleMap: { [key: string]: string } = {
+      'member': 'member',
+      'members': 'member',
+      'manager': 'manager',
+      'managers': 'manager',
+      'admin': 'admin',
+      'admins': 'admin',
+      'employee': 'employee',
+      'employees': 'employee',
+      'tech-lead': 'tech-lead',
+      'techlead': 'tech-lead',
+      'finance-manager': 'finance-manager',
+      'financemanager': 'finance-manager',
+    };
+
+    return roleMap[roleName.toLowerCase()] || roleName.toLowerCase();
+  }
+
+  private parseDate(dateStr: string): string | null {
+    try {
+      // Handle various date formats
+      const date = new Date(dateStr);
+      if (isNaN(date.getTime())) {
+        return null;
+      }
+      return date.toISOString();
+    } catch {
+      return null;
+    }
   }
 
   async uploadFileToGemini(params: {

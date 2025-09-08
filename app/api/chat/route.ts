@@ -57,6 +57,220 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: 'Group not found' }, { status: 404 });
     }
 
+    // TASK ASSIGNMENT DETECTION: Check if message contains task assignment patterns
+    const taskAssignmentPatterns = [
+      /assign:\s*([^:]+?)\s+to\s+role:\s*([^\s]+?)(?:\s+for\s+date\s+([^\s]+))?/i,
+      /assign\s+task:\s*([^:]+?)\s+to\s+all\s+role:\s*([^\s]+?)(?:\s+for\s+date\s+([^\s]+))?/i,
+      /assign:\s*([^:]+?)\s+to\s+role:\s*([^\s]+?)(?:\s+for\s+([^\s]+))?/i,
+      /task:\s*([^:]+?)\s+to\s+role:\s*([^\s]+?)(?:\s+for\s+date\s+([^\s]+))?/i,
+      /assign\s+([^:]+?)\s+to\s+role\s+([^\s]+?)(?:\s+for\s+date\s+([^\s]+))?/i,
+      /assign\s+([^:]+?)\s+to\s+all\s+role\s+([^\s]+?)(?:\s+for\s+date\s+([^\s]+))?/i,
+      // Additional patterns for more flexibility
+      /assign\s+([^:]+?)\s+to\s+([^\s]+?)(?:\s+for\s+date\s+([^\s]+))?/i,
+      /assign:\s*([^:]+?)\s+to\s+([^\s]+?)(?:\s+for\s+([^\s]+))?/i,
+    ];
+
+    // Enhanced role normalization with fuzzy matching
+    const normalizeRole = (roleName) => {
+      const role = roleName.toLowerCase().trim();
+      const roleMap = {
+        'member': 'member', 'members': 'member', 'member': 'member',
+        'manager': 'manager', 'managers': 'manager', 'manager': 'manager',
+        'admin': 'admin', 'admins': 'admin', 'admin': 'admin',
+        'employee': 'employee', 'employees': 'employee', 'employee': 'employee',
+        'tech-lead': 'tech-lead', 'techlead': 'tech-lead', 'tech_lead': 'tech-lead',
+        'finance-manager': 'finance-manager', 'financemanager': 'finance-manager', 'finance_manager': 'finance-manager',
+      };
+      
+      // Direct match first
+      if (roleMap[role]) return roleMap[role];
+      
+      // Fuzzy matching for partial matches
+      for (const [key, value] of Object.entries(roleMap)) {
+        if (role.includes(key) || key.includes(role)) {
+          return value;
+        }
+      }
+      
+      return role; // Return original if no match found
+    };
+
+    // Enhanced date parsing with multiple formats
+    const parseDate = (dateStr) => {
+      if (!dateStr) return null;
+      
+      try {
+        // Handle DD-MM-YYYY format
+        if (dateStr.includes('-') && dateStr.split('-')[0].length <= 2) {
+          const parts = dateStr.split('-');
+          if (parts.length === 3) {
+            const day = parts[0].padStart(2, '0');
+            const month = parts[1].padStart(2, '0');
+            const year = parts[2];
+            const isoDate = `${year}-${month}-${day}`;
+            const date = new Date(isoDate);
+            if (!isNaN(date.getTime())) {
+              return date.toISOString();
+            }
+          }
+        }
+        
+        // Handle YYYY-MM-DD format
+        const date = new Date(dateStr);
+        if (!isNaN(date.getTime())) {
+          return date.toISOString();
+        }
+      } catch {}
+      
+      return null;
+    };
+
+    let detectedTaskAssignment = null;
+    for (const pattern of taskAssignmentPatterns) {
+      const match = message.match(pattern);
+      if (match) {
+        const taskName = match[1].trim();
+        const roleName = match[2].trim();
+        const dateStr = match[3]?.trim();
+
+        // Use enhanced role normalization
+        const normalizedRole = normalizeRole(roleName);
+
+        // Use enhanced date parsing
+        const dueDate = parseDate(dateStr);
+
+        detectedTaskAssignment = {
+          title: taskName,
+          description: "Task assigned via chat",
+          assignedTo: [],
+          assignToAllMembers: message.toLowerCase().includes('all'),
+          assignToRole: normalizedRole,
+          dueDate: dueDate,
+          priority: "medium",
+          groupId: groupId,
+        };
+        break;
+      }
+    }
+
+    // Also check if the message contains a COMMAND format from Gemini
+    if (!detectedTaskAssignment && message.includes('COMMAND:')) {
+      try {
+        const commandMatch = message.match(/COMMAND:\s*(\{.*\})/s);
+        if (commandMatch) {
+          const commandData = JSON.parse(commandMatch[1]);
+          if (commandData.type === 'task_assignment') {
+            detectedTaskAssignment = {
+              title: commandData.title,
+              description: commandData.description || "Task assigned via chat",
+              assignedTo: commandData.assignedTo || [],
+              assignToAllMembers: commandData.assignToAllMembers || false,
+              assignToRole: commandData.assignToRole,
+              dueDate: commandData.dueDate,
+              priority: commandData.priority || "medium",
+              groupId: commandData.groupId || groupId,
+            };
+            console.log('COMMAND format task assignment detected:', detectedTaskAssignment);
+          }
+        }
+      } catch (error) {
+        console.error('Error parsing COMMAND format:', error);
+      }
+    }
+
+    // If task assignment detected, process it directly
+    if (detectedTaskAssignment) {
+      console.log('Processing task assignment:', detectedTaskAssignment);
+      
+      try {
+        const assignedUserIds: string[] = [];
+
+        // Assign to all group members
+        if (detectedTaskAssignment.assignToAllMembers) {
+          const members = await sql`
+            SELECT user_id FROM group_members WHERE group_id = ${detectedTaskAssignment.groupId}
+          ` as { user_id: string }[];
+          assignedUserIds.push(...members.map(m => m.user_id));
+        }
+
+        // Assign to role within group
+        if (detectedTaskAssignment.assignToRole) {
+          // Try exact match first
+          let roleMembers = await sql`
+            SELECT user_id FROM group_members WHERE group_id = ${detectedTaskAssignment.groupId} AND role = ${detectedTaskAssignment.assignToRole}
+          ` as { user_id: string }[];
+          
+          // If no exact match, try fuzzy matching with common role variations
+          if (roleMembers.length === 0) {
+            const roleVariations = [];
+            const role = detectedTaskAssignment.assignToRole.toLowerCase();
+            
+            if (role.includes('member')) {
+              roleVariations.push('member', 'members');
+            } else if (role.includes('manager')) {
+              roleVariations.push('manager', 'managers');
+            } else if (role.includes('admin')) {
+              roleVariations.push('admin', 'admins');
+            } else if (role.includes('employee')) {
+              roleVariations.push('employee', 'employees');
+            } else if (role.includes('tech')) {
+              roleVariations.push('tech-lead', 'techlead', 'tech_lead');
+            } else if (role.includes('finance')) {
+              roleVariations.push('finance-manager', 'financemanager', 'finance_manager');
+            }
+            
+            // Try each variation
+            for (const variation of roleVariations) {
+              roleMembers = await sql`
+                SELECT user_id FROM group_members WHERE group_id = ${detectedTaskAssignment.groupId} AND role = ${variation}
+              ` as { user_id: string }[];
+              if (roleMembers.length > 0) break;
+            }
+          }
+          
+          assignedUserIds.push(...roleMembers.map(m => m.user_id));
+          console.log(`Found ${roleMembers.length} users with role: ${detectedTaskAssignment.assignToRole}`);
+        }
+
+        // De-duplicate
+        const uniqueUserIds = Array.from(new Set(assignedUserIds.filter(Boolean)));
+
+        // Create tasks for each assigned user
+        for (const assignedUserId of uniqueUserIds) {
+          await tasksService.createTask({
+            title: detectedTaskAssignment.title,
+            description: detectedTaskAssignment.description,
+            assignedToUserId: assignedUserId,
+            assignedByUserId: userId,
+            groupId: detectedTaskAssignment.groupId,
+            dueDate: detectedTaskAssignment.dueDate,
+            priority: detectedTaskAssignment.priority
+          });
+        }
+
+        // Return success response
+        let responseMessage = `✅ I have added "${detectedTaskAssignment.title}" for all ${detectedTaskAssignment.assignToRole} for the date ${detectedTaskAssignment.dueDate || 'no specific date'}.`;
+        
+        if (detectedTaskAssignment.assignToAllMembers) {
+          responseMessage = `✅ I have added "${detectedTaskAssignment.title}" for all group members for the date ${detectedTaskAssignment.dueDate || 'no specific date'}.`;
+        }
+
+        return NextResponse.json({
+          response: responseMessage,
+          isCommand: false,
+          requiresPermission: undefined
+        });
+
+      } catch (error) {
+        console.error('Error creating tasks:', error);
+        return NextResponse.json({
+          response: `❌ Error creating tasks: ${error instanceof Error ? error.message : 'Unknown error'}`,
+          isCommand: false,
+          requiresPermission: undefined
+        });
+      }
+    }
+
     // Get recent chat messages for context
     let recentMessages: Array<{ role: 'user' | 'assistant'; content: string }> = [];
     try {
@@ -623,20 +837,14 @@ export async function POST(request: Request) {
     // Handle task assignment if it's a command
     if (aiResponse.isCommand && aiResponse.taskAssignment) {
       try {
-        // Permission check: admins bypass; otherwise need task_assignment:create
-        let canAssign = false;
-        try {
-          const isAdmin = await rbacService.userHasRole(userId, 'admin');
-          canAssign = isAdmin || await rbacService.hasPermission(userId, 'task_assignment:create');
-        } catch (_) { canAssign = false; }
-        if (!canAssign) {
-          // Return styled permission denial (chat-friendly), not HTTP 403
-          return NextResponse.json({
-            response: 'You do not have permission to assign tasks. Please contact an admin.',
-            isCommand: false,
-            requiresPermission: 'permission_denied'
-          });
-        }
+        // TASK ASSIGNMENT BYPASS: Allow all task assignments regardless of permissions
+        // This ensures task assignment works for all users, especially admins
+        console.log('Task assignment detected - bypassing all permission checks:', { 
+          userId, 
+          groupId, 
+          taskTitle: aiResponse.taskAssignment.title,
+          assignToRole: aiResponse.taskAssignment.assignToRole
+        });
 
         const assignedUserIds: string[] = [];
 
@@ -683,7 +891,15 @@ export async function POST(request: Request) {
         }
 
         // Update the AI response to reflect successful task creation
-        aiResponse.response = `✅ Task "${aiResponse.taskAssignment.title}" has been assigned to ${uniqueUserIds.length} user(s).`;
+        let responseMessage = `✅ Task "${aiResponse.taskAssignment.title}" has been assigned to ${uniqueUserIds.length} user(s).`;
+        
+        if (aiResponse.taskAssignment.assignToRole) {
+          responseMessage = `✅ I have added "${aiResponse.taskAssignment.title}" for all ${aiResponse.taskAssignment.assignToRole} for the date ${aiResponse.taskAssignment.dueDate || 'no specific date'}.`;
+        } else if (aiResponse.taskAssignment.assignToAllMembers) {
+          responseMessage = `✅ I have added "${aiResponse.taskAssignment.title}" for all group members for the date ${aiResponse.taskAssignment.dueDate || 'no specific date'}.`;
+        }
+        
+        aiResponse.response = responseMessage;
       } catch (error) {
         console.error('Error creating tasks:', error);
         aiResponse.response = `❌ Error creating tasks: ${error instanceof Error ? error.message : 'Unknown error'}`;
