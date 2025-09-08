@@ -12,6 +12,7 @@ export interface Note {
   isPrivate: boolean;
   createdAt: string;
   updatedAt: string;
+  inviteCode?: string;
   sharedWith?: Array<{
     userId: string;
     userName: string;
@@ -33,6 +34,38 @@ export interface ShareNoteData {
 }
 
 export class NotesService {
+  private encodeInviteCode(noteId: string): string {
+    const hex = noteId.replace(/-/g, '');
+    const asBigInt = BigInt('0x' + hex);
+    return asBigInt.toString(36);
+  }
+
+  decodeInviteCodeToUuid(inviteCode: string): string | null {
+    try {
+      const asBigInt = BigInt(`0x${BigInt(inviteCode, 36).toString(16)}`);
+      let hex = asBigInt.toString(16).padStart(32, '0');
+      // Insert dashes: 8-4-4-4-12
+      hex = `${hex.slice(0,8)}-${hex.slice(8,12)}-${hex.slice(12,16)}-${hex.slice(16,20)}-${hex.slice(20)}`;
+      return hex;
+    } catch {
+      return null;
+    }
+  }
+
+  async findNoteIdByInviteCode(code: string): Promise<string | null> {
+    // Support short codes by prefix match on encoded id (in app layer)
+    try {
+      const rows = await sql`SELECT id FROM notes ORDER BY updated_at DESC LIMIT 1000` as { id: string }[];
+      const norm = code.trim().toLowerCase();
+      for (const r of rows) {
+        const enc = this.encodeInviteCode(r.id).toLowerCase();
+        if (enc.startsWith(norm)) return r.id;
+      }
+      return null;
+    } catch {
+      return null;
+    }
+  }
   async createNote(data: CreateNoteData): Promise<Note> {
     try {
       const result = await sql`
@@ -56,7 +89,8 @@ export class NotesService {
         authorName: authorResult[0]?.name || 'Unknown',
         isPrivate: note.is_private,
         createdAt: note.created_at,
-        updatedAt: note.updated_at
+        updatedAt: note.updated_at,
+        inviteCode: this.encodeInviteCode(note.id)
       };
     } catch (error) {
       console.error('Error creating note:', error);
@@ -84,7 +118,8 @@ export class NotesService {
         authorName: note.author_name,
         isPrivate: note.is_private,
         createdAt: note.created_at,
-        updatedAt: note.updated_at
+        updatedAt: note.updated_at,
+        inviteCode: this.encodeInviteCode(note.id)
       }));
     } catch (error) {
       console.error('Error fetching user notes:', error);
@@ -114,7 +149,8 @@ export class NotesService {
         authorName: note.author_name,
         isPrivate: note.is_private,
         createdAt: note.created_at,
-        updatedAt: note.updated_at
+        updatedAt: note.updated_at,
+        inviteCode: this.encodeInviteCode(note.id)
       }));
     } catch (error) {
       console.error('Error fetching shared notes:', error);
@@ -277,7 +313,8 @@ export class NotesService {
         authorName: note.author_name,
         isPrivate: note.is_private,
         createdAt: note.created_at,
-        updatedAt: note.updated_at
+        updatedAt: note.updated_at,
+        inviteCode: this.encodeInviteCode(note.id)
       };
     } catch (error) {
       console.error('Error fetching note:', error);

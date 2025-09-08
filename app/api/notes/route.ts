@@ -30,11 +30,7 @@ export async function GET(request: Request) {
     
     const userId = users[0].id;
 
-    // Check permissions
-    const hasReadPermission = await rbacService.hasPermission(userId, 'notes:read');
-    if (!hasReadPermission) {
-      return NextResponse.json({ error: 'Insufficient permissions' }, { status: 403 });
-    }
+    // Allow users to view their own and shared notes without special perms
 
     let notes = [];
     if (type === 'all') {
@@ -66,8 +62,29 @@ export async function POST(request: Request) {
   }
 
   try {
-    const { title, content, isPrivate = true } = await request.json();
+    const body = await request.json();
+    const { title, content, isPrivate = true, inviteCode } = body || {};
     
+    // If inviteCode provided, join existing note and return it
+    if (inviteCode) {
+      // Accept short codes by prefix
+      const noteIdFromCode = (await notesService.findNoteIdByInviteCode(inviteCode)) || notesService.decodeInviteCodeToUuid(inviteCode);
+      if (!noteIdFromCode) return NextResponse.json({ error: 'Invalid invite code' }, { status: 400 });
+      try {
+        await sql`
+          INSERT INTO note_shares (note_id, shared_with_user_id, shared_by_user_id)
+          VALUES (${noteIdFromCode}, ${userId}, ${userId})
+          ON CONFLICT (note_id, shared_with_user_id) DO NOTHING
+        `;
+        const joined = await notesService.getNoteById(noteIdFromCode, userId);
+        if (!joined) return NextResponse.json({ error: 'Note not found' }, { status: 404 });
+        return NextResponse.json(joined, { status: 201 });
+      } catch (e) {
+        console.error('join by code failed', e);
+        return NextResponse.json({ error: 'Failed to add by code' }, { status: 500 });
+      }
+    }
+
     if (!title || !content) {
       return NextResponse.json({ error: 'Title and content are required' }, { status: 400 });
     }
@@ -83,18 +100,28 @@ export async function POST(request: Request) {
     
     const userId = users[0].id;
 
-    // Check permissions
-    const hasCreatePermission = await rbacService.hasPermission(userId, 'notes:create');
-    if (!hasCreatePermission) {
-      return NextResponse.json({ error: 'Insufficient permissions' }, { status: 403 });
-    }
+    // Allow users to create their own notes
 
-    const note = await notesService.createNote({
+    let note = await notesService.createNote({
       title,
       content,
       isPrivate,
       authorId: userId
     });
+
+    // Optional: auto-join by invite code (share with current user)
+    if (inviteCode) {
+      try {
+        const noteIdFromCode = notesService.decodeInviteCodeToUuid(inviteCode);
+        if (noteIdFromCode) {
+          await sql`
+            INSERT INTO note_shares (note_id, shared_with_user_id, shared_by_user_id)
+            VALUES (${noteIdFromCode}, ${userId}, ${userId})
+            ON CONFLICT (note_id, shared_with_user_id) DO NOTHING
+          `;
+        }
+      } catch {}
+    }
 
     return NextResponse.json(note, { status: 201 });
 

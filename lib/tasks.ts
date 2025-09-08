@@ -96,7 +96,7 @@ export class TasksService {
         ORDER BY t.created_at DESC
       `;
 
-      return result.map(task => ({
+      const mapped = result.map(task => ({
         id: task.id,
         title: task.title,
         description: task.description,
@@ -112,6 +112,15 @@ export class TasksService {
         createdAt: task.created_at,
         updatedAt: task.updated_at
       }));
+      // Incomplete first, then completed/cancelled, and within groups by due/created desc
+      return mapped.sort((a: any, b: any) => {
+        const ar = (a.status === 'completed' || a.status === 'cancelled') ? 1 : 0
+        const br = (b.status === 'completed' || b.status === 'cancelled') ? 1 : 0
+        if (ar !== br) return ar - br
+        const at = a.dueDate ? Date.parse(a.dueDate) : Date.parse(a.createdAt)
+        const bt = b.dueDate ? Date.parse(b.dueDate) : Date.parse(b.createdAt)
+        return bt - at
+      });
     } catch (error) {
       console.error('Error fetching user tasks:', error);
       throw error;

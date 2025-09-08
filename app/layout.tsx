@@ -21,7 +21,7 @@ export default function RootLayout({
     return (
         // 1. Descope's provider is on the outside
         <DescopeProvider projectId="P31g20L0fHuSApft5KX1X7XcYOrz">
-            <html lang="en">
+            <html lang="en" className="dark">
             <body className={`font-sans ${GeistSans.variable} ${GeistMono.variable}`}>
             {/* 2. Your custom provider is on the inside, wrapping the pages */}
             <AuthProvider>

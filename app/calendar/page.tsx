@@ -57,11 +57,16 @@ export default function CalendarPage() {
   // Remove Google Calendar integration
 
   const ordered = useMemo(() => {
-    return [...tasks].sort((a, b) => {
+    const ranked = [...tasks]
+    ranked.sort((a: any, b: any) => {
+      const ar = (a.status === 'completed' || a.status === 'cancelled') ? 1 : 0
+      const br = (b.status === 'completed' || b.status === 'cancelled') ? 1 : 0
+      if (ar !== br) return ar - br
       const aTime = a.dueDate ? Date.parse(a.dueDate) : Date.parse(a.createdAt)
       const bTime = b.dueDate ? Date.parse(b.dueDate) : Date.parse(b.createdAt)
       return bTime - aTime
     })
+    return ranked
   }, [tasks])
 
   async function markDone(taskId: string, next: boolean) {

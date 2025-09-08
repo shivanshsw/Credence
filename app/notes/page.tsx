@@ -8,7 +8,8 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
-import { Plus, Search, Share2, Edit, Trash2, User } from "lucide-react"
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
+import { Plus, Search, Share2, Edit, Trash2, User, Upload } from "lucide-react"
 import { useAuth } from "@/components/auth-context"
 import AppShell from "@/components/app-shell"
 
@@ -33,17 +34,34 @@ export default function NotesPage() {
   const [isCreateOpen, setIsCreateOpen] = useState(false)
   const [isShareOpen, setIsShareOpen] = useState(false)
   const [shareEmails, setShareEmails] = useState("")
+  const [addByCodeOpen, setAddByCodeOpen] = useState(false)
+  const [joinCode, setJoinCode] = useState("")
+  const [groups, setGroups] = useState<Array<{ id: string; name: string; role: string }>>([])
+  const [addToGroupOpen, setAddToGroupOpen] = useState(false)
+  const [targetGroupId, setTargetGroupId] = useState<string>("")
 
   // Form state for creating/editing notes
   const [formData, setFormData] = useState({
     title: "",
     content: "",
-    isPrivate: true
+    isPrivate: true,
+    inviteCode: ""
   })
 
   useEffect(() => {
     fetchNotes()
   }, [activeTab])
+  useEffect(() => {
+    const load = async () => {
+      try {
+        const res = await fetch('/api/security/access', { credentials: 'include' })
+        const data = await res.json().catch(() => ({}))
+        const rows = Array.isArray(data.data) ? data.data : []
+        setGroups(rows)
+      } catch {}
+    }
+    load()
+  }, [])
 
   const fetchNotes = async () => {
     try {
@@ -75,9 +93,9 @@ export default function NotesPage() {
       })
 
       if (response.ok) {
-        const newNote = await response.json()
-        setNotes(prev => [newNote, ...prev])
-        setFormData({ title: "", content: "", isPrivate: true })
+        // Always refetch to ensure full objects (prevents undefined title/content)
+        await fetchNotes()
+        setFormData({ title: "", content: "", isPrivate: true, inviteCode: "" })
         setIsCreateOpen(false)
       }
     } catch (error) {
@@ -111,6 +129,29 @@ export default function NotesPage() {
       alert('Share failed. Check console for details.')
     }
   }
+
+  const addByInviteCode = async () => {
+    if (!joinCode) return
+    try {
+      // Reuse create endpoint with inviteCode only
+      const res = await fetch('/api/notes', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({ title: "", content: "", isPrivate: true, inviteCode: joinCode })
+      })
+      if (res.ok) {
+        setJoinCode("")
+        setAddByCodeOpen(false)
+        fetchNotes()
+      } else {
+        const err = await res.json().catch(() => ({} as any))
+        alert(err.error || 'Invalid invite code')
+      }
+    } catch (e) {
+      alert('Failed to add by invite code')
+    }
+  }
   
   const copyNote = async (noteId: string) => {
     try {
@@ -121,8 +162,7 @@ export default function NotesPage() {
         body: JSON.stringify({ note_id: noteId })
       })
       if (res.ok) {
-        const newNote = await res.json()
-        setNotes(prev => [newNote, ...prev])
+        await fetchNotes()
       }
     } catch (e) {
       console.error('Copy note error', e)
@@ -186,9 +226,28 @@ export default function NotesPage() {
                   />
                   <label htmlFor="isPrivate" className="text-sm">Private note</label>
                 </div>
+                <Input
+                  placeholder="Add by invite code (optional)"
+                  value={formData.inviteCode}
+                  onChange={(e) => setFormData(prev => ({ ...prev, inviteCode: e.target.value }))}
+                />
                 <Button onClick={createNote} className="w-full">
                   Create Note
                 </Button>
+              </div>
+            </DialogContent>
+          </Dialog>
+          <Dialog open={addByCodeOpen} onOpenChange={setAddByCodeOpen}>
+            <DialogTrigger asChild>
+              <Button variant="outline">Add by Invite Code</Button>
+            </DialogTrigger>
+            <DialogContent>
+              <DialogHeader>
+                <DialogTitle>Add Note by Invite Code</DialogTitle>
+              </DialogHeader>
+              <div className="space-y-4">
+                <Input placeholder="Invite code (6-8 chars also work)" value={joinCode} onChange={(e) => setJoinCode(e.target.value)} />
+                <Button onClick={addByInviteCode} className="w-full">Add</Button>
               </div>
             </DialogContent>
           </Dialog>
@@ -233,6 +292,9 @@ export default function NotesPage() {
                       <div className="flex items-start justify-between">
                         <CardTitle className="text-lg">{note.title}</CardTitle>
                         <div className="flex gap-1">
+                          <Button size="sm" variant="ghost" onClick={() => { setSelectedNote(note); setAddToGroupOpen(true); }} title="Add to group as inline file">
+                            <Upload className="h-4 w-4" />
+                          </Button>
                           <Button
                             size="sm"
                             variant="ghost"
@@ -243,11 +305,9 @@ export default function NotesPage() {
                           >
                             <Share2 className="h-4 w-4" />
                           </Button>
-                          {!note.isPrivate && (
-                            <Button size="sm" variant="ghost" onClick={() => copyNote(note.id)}>
-                              Copy
-                            </Button>
-                          )}
+                          <Button size="sm" variant="ghost" onClick={() => copyNote(note.id)}>
+                            Copy
+                          </Button>
                           <Button
                             size="sm"
                             variant="ghost"
@@ -270,9 +330,10 @@ export default function NotesPage() {
                       <p className="text-sm text-neutral-300 line-clamp-3">
                         {note.content}
                       </p>
-                      <p className="text-xs text-neutral-500 mt-2">
-                        {new Date(note.updatedAt).toLocaleDateString()}
-                      </p>
+                      <div className="flex items-center justify-between text-xs text-neutral-500 mt-2">
+                        <span>{new Date(note.updatedAt).toLocaleDateString()}</span>
+                        <span className="text-[11px]">Code: {(note as any).inviteCode || '—'}</span>
+                      </div>
                     </CardContent>
                   </Card>
                 ))}
@@ -280,6 +341,50 @@ export default function NotesPage() {
             )}
           </TabsContent>
         </Tabs>
+
+        {/* Add note to group (inline file) */}
+        <Dialog open={addToGroupOpen} onOpenChange={setAddToGroupOpen}>
+          <DialogContent>
+            <DialogHeader>
+              <DialogTitle>Add note to group</DialogTitle>
+            </DialogHeader>
+            <div className="space-y-4">
+              <Select value={targetGroupId} onValueChange={setTargetGroupId}>
+                <SelectTrigger>
+                  <SelectValue placeholder="Select group" />
+                </SelectTrigger>
+                <SelectContent>
+                  {groups.map(g => (
+                    <SelectItem key={g.id} value={g.id}>{g.name}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <Button
+                className="w-full"
+                onClick={async () => {
+                  if (!selectedNote || !targetGroupId) return
+                  try {
+                    const form = new FormData()
+                    form.set('title', selectedNote.title)
+                    form.set('description', selectedNote.content)
+                    form.set('group_id', targetGroupId)
+                    const res = await fetch('/api/files/upload', { method: 'POST', credentials: 'include', body: form })
+                    if (res.ok) {
+                      setAddToGroupOpen(false)
+                    } else {
+                      const err = await res.json().catch(() => ({}))
+                      alert(err.error || 'Failed to add to group')
+                    }
+                  } catch (e) {
+                    alert('Failed to add to group')
+                  }
+                }}
+              >
+                Add
+              </Button>
+            </div>
+          </DialogContent>
+        </Dialog>
 
         {/* Share Note Dialog */}
         <Dialog open={isShareOpen} onOpenChange={setIsShareOpen}>

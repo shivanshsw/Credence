@@ -112,12 +112,6 @@ export async function DELETE(request: Request, { params }: { params: { id: strin
     
     const userId = users[0].id;
 
-    // Check permissions
-    const hasDeletePermission = await rbacService.hasPermission(userId, 'notes:delete');
-    if (!hasDeletePermission) {
-      return NextResponse.json({ error: 'Insufficient permissions' }, { status: 403 });
-    }
-
     await notesService.deleteNote(params.id, userId);
 
     return NextResponse.json({ success: true });
