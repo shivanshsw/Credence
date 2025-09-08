@@ -18,11 +18,12 @@ export async function POST(request: Request) {
     const description = (form.get('description') as string) || '';
     const groupId = (form.get('group_id') as string) || '';
 
-    if (!file || !(file instanceof Blob)) {
-      return NextResponse.json({ error: 'file is required' }, { status: 400 });
-    }
+    // Validate: require title and group, and either a file or non-empty description (inline content)
     if (!title || !groupId) {
       return NextResponse.json({ error: 'title and group_id are required' }, { status: 400 });
+    }
+    if (!(file instanceof Blob) && (!description || !description.trim())) {
+      return NextResponse.json({ error: 'Provide a file or non-empty description for inline content' }, { status: 400 });
     }
 
     // Resolve uploader user id from descope id
@@ -42,81 +43,112 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: 'Forbidden: not a member of this group' }, { status: 403 });
     }
 
-    const buffer = Buffer.from(await (file as Blob).arrayBuffer());
-    const originalName = (file as any).name || 'upload';
-    const contentType = (file as Blob).type || 'application/octet-stream';
-    const destinationPath = `group-${groupId}/${Date.now()}-${originalName.replace(/[^a-zA-Z0-9._-]/g, '_')}`;
+    // Branch: File-backed upload vs inline content
+    if (file instanceof Blob) {
+      const originalName = (file as any).name || 'upload';
+      const contentType = (file as Blob).type || 'application/octet-stream';
+      const destinationPath = `group-${groupId}/${Date.now()}-${originalName.replace(/[^a-zA-Z0-9._-]/g, '_')}`;
 
-    const { error: upErr } = await supabaseAdmin.storage.from(GROUP_FILES_BUCKET).upload(destinationPath, buffer, {
-      contentType,
-      upsert: false,
-    });
-    if (upErr) {
-      return NextResponse.json({ error: 'Upload failed', detail: upErr.message }, { status: 500 });
+      // Upload the File/Blob directly to Supabase storage, auto-create bucket on first use
+      let { error: upErr } = await supabaseAdmin.storage.from(GROUP_FILES_BUCKET).upload(destinationPath, file as Blob, {
+        contentType,
+        upsert: false,
+      });
+      if (upErr) {
+        try {
+          // attempt to create bucket then retry once
+          // @ts-ignore - createBucket exists on server-side client
+          await supabaseAdmin.storage.createBucket(GROUP_FILES_BUCKET, { public: false }).catch(() => {});
+          const retry = await supabaseAdmin.storage.from(GROUP_FILES_BUCKET).upload(destinationPath, file as Blob, {
+            contentType,
+            upsert: false,
+          });
+          upErr = retry.error;
+        } catch {}
+      }
+      if (upErr) {
+        return NextResponse.json({ error: `Upload failed: ${upErr.message || 'unknown error'}`, detail: upErr.message }, { status: 500 });
+      }
+
+      // Store the storage path in both columns for consistency
+      // We can generate signed URLs on-demand when needed for frontend display
+      let inserted;
+      try {
+        inserted = await sql`
+          INSERT INTO uploaded_files (group_id, uploader_id, title, description, file_url, storage_path, mime_type, is_inline_content, content_text)
+          VALUES (${groupId}, ${uploaderId}, ${title}, ${description}, ${destinationPath}, ${destinationPath}, ${contentType}, false, NULL)
+          RETURNING file_id, file_url
+        `;
+      } catch (error) {
+        console.log('[upload] storage_path or mime_type column not found, using file_url only');
+        inserted = await sql`
+          INSERT INTO uploaded_files (group_id, uploader_id, title, description, file_url, is_inline_content)
+          VALUES (${groupId}, ${uploaderId}, ${title}, ${description}, ${destinationPath}, false)
+          RETURNING file_id, file_url
+        `;
+      }
+
+      // Generate signed URL for the response (frontend display)
+      let publicUrl = '';
+      try {
+        const { data: signed } = await supabaseAdmin.storage.from(GROUP_FILES_BUCKET).createSignedUrl(destinationPath, 60 * 60);
+        publicUrl = signed?.signedUrl || '';
+      } catch {}
+
+      // audit
+      try {
+        await sql`
+          INSERT INTO audit_logs (actor_user_id, action, target_type, target_id, metadata)
+          VALUES (${uploaderId}, 'file.upload', 'group', ${groupId}, ${JSON.stringify({ title, fileUrl: publicUrl })})
+        `;
+      } catch {}
+
+      return NextResponse.json({
+        file_id: inserted[0].file_id,
+        file_url: publicUrl, // Return signed URL for frontend
+      });
+    } else {
+      // Inline content path: use description as actual content
+      let insertedInline;
+      try {
+        insertedInline = await sql`
+          INSERT INTO uploaded_files (group_id, uploader_id, title, description, is_inline_content, content_text, mime_type)
+          VALUES (${groupId}, ${uploaderId}, ${title}, ${description}, true, ${description}, 'text/plain')
+          RETURNING file_id
+        `;
+      } catch (e1) {
+        try {
+          insertedInline = await sql`
+            INSERT INTO uploaded_files (group_id, uploader_id, title, description, is_inline_content, content_text)
+            VALUES (${groupId}, ${uploaderId}, ${title}, ${description}, true, ${description})
+            RETURNING file_id
+          `;
+        } catch (e2) {
+          console.error('[upload:inline] failed to insert inline content', e1, e2);
+          return NextResponse.json({ error: 'Failed to save inline content' }, { status: 500 });
+        }
+      }
+
+      // audit
+      try {
+        await sql`
+          INSERT INTO audit_logs (actor_user_id, action, target_type, target_id, metadata)
+          VALUES (${uploaderId}, 'file.inline_create', 'group', ${groupId}, ${JSON.stringify({ title, inline: true })})
+        `;
+      } catch {}
+
+      return NextResponse.json({
+        file_id: insertedInline[0].file_id,
+        file_url: '',
+      });
     }
-
-    // Store the storage path in both columns for consistency
-    // We can generate signed URLs on-demand when needed for frontend display
-    let inserted;
-    try {
-      inserted = await sql`
-        INSERT INTO uploaded_files (group_id, uploader_id, title, description, file_url, storage_path)
-        VALUES (${groupId}, ${uploaderId}, ${title}, ${description}, ${destinationPath}, ${destinationPath})
-        RETURNING file_id, file_url
-      `;
-    } catch (error) {
-      console.log('[upload] storage_path column not found, using file_url only');
-      inserted = await sql`
-        INSERT INTO uploaded_files (group_id, uploader_id, title, description, file_url)
-        VALUES (${groupId}, ${uploaderId}, ${title}, ${description}, ${destinationPath})
-        RETURNING file_id, file_url
-      `;
-    }
-
-    // Generate signed URL for the response (frontend display)
-    const { data: signed } = await supabaseAdmin.storage.from(GROUP_FILES_BUCKET).createSignedUrl(destinationPath, 60 * 60);
-    const publicUrl = signed?.signedUrl || '';
-
-    // audit
-    try {
-      await sql`
-        INSERT INTO audit_logs (actor_user_id, action, target_type, target_id, metadata)
-        VALUES (${uploaderId}, 'file.upload', 'group', ${groupId}, ${JSON.stringify({ title, fileUrl: publicUrl })})
-      `;
-    } catch {}
-
-    return NextResponse.json({
-      file_id: inserted[0].file_id,
-      file_url: publicUrl, // Return signed URL for frontend
-    });
   } catch (error) {
     console.error('Upload failed:', error);
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
   }
 }
 
-const extractStoragePathFromUrl = (url: string): string => {
-  // If it's already a storage path (doesn't start with http), return as-is
-  if (!url.startsWith('http')) {
-    return url;
-  }
-  
-  // Extract storage path from signed URL
-  // Format: https://xyz.supabase.co/storage/v1/object/sign/bucket-name/path?token=...
-  try {
-    const urlObj = new URL(url);
-    const pathParts = urlObj.pathname.split('/');
-    const signIndex = pathParts.indexOf('sign');
-    if (signIndex !== -1 && pathParts.length > signIndex + 2) {
-      // Skip 'sign' and bucket name, get the rest
-      return pathParts.slice(signIndex + 2).join('/');
-    }
-  } catch (e) {
-    console.warn('[chat] Failed to extract storage path from URL:', url);
-  }
-  
-  // Fallback: return the original URL and hope it works
-  return url;
-};
+
+
 
 

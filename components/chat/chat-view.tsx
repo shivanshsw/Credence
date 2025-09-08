@@ -60,11 +60,14 @@ export function ChatView() {
     }
 
     async function submitUploadForm() {
-        if (!selectedGroup?.id || !uploadForm.file || !uploadForm.title) return;
+        const hasInline = !!uploadForm.description && uploadForm.description.trim().length > 0;
+        if (!selectedGroup?.id || !uploadForm.title || (!uploadForm.file && !hasInline)) return;
         try {
             setIsUploading(true);
             const form = new FormData();
-            form.append('file', uploadForm.file);
+            if (uploadForm.file) {
+                form.append('file', uploadForm.file);
+            }
             form.append('title', uploadForm.title);
             form.append('description', uploadForm.description);
             form.append('group_id', selectedGroup.id);
@@ -250,7 +253,7 @@ export function ChatView() {
                                     <Textarea placeholder="Description" value={uploadForm.description} onChange={(e) => setUploadForm(prev => ({ ...prev, description: e.target.value }))} rows={3} />
                                     <Input type="file" onChange={(e) => setUploadForm(prev => ({ ...prev, file: e.target.files?.[0] || null }))} />
                                     <div className="flex justify-end">
-                                        <Button onClick={submitUploadForm} disabled={!uploadForm.file || !uploadForm.title || isUploading}>Submit</Button>
+                                        <Button onClick={submitUploadForm} disabled={!uploadForm.title || (!uploadForm.file && !(uploadForm.description && uploadForm.description.trim().length > 0)) || isUploading}>Submit</Button>
                                     </div>
                                 </div>
                             </DialogContent>

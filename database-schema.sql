@@ -173,6 +173,7 @@ CREATE TABLE IF NOT EXISTS uploaded_files (
     description TEXT,
     file_url TEXT NOT NULL,
     storage_path TEXT NOT NULL,
+    mime_type TEXT,
     uploaded_at TIMESTAMPTZ DEFAULT NOW()
 );
 

@@ -90,7 +90,7 @@ export async function POST(request: Request) {
     let filesForContext: any[] = [];
     try {
       filesForContext = await sql`
-        SELECT title as file_name, NULL as mime_type, uploaded_at as created_at
+        SELECT title as file_name, mime_type, uploaded_at as created_at, is_inline_content
         FROM uploaded_files
         WHERE group_id = ${groupId}
         ORDER BY uploaded_at DESC
@@ -116,6 +116,29 @@ export async function POST(request: Request) {
       }
       console.log('[chat] downloadFile: success, file downloaded');
       return data;
+    };
+
+    const uploadFileToGemini = async (fileBlob: Blob, fileName: string, mimeType?: string): Promise<string | null> => {
+      try {
+        console.log('[chat] uploadFileToGemini: uploading file to Gemini', { fileName, mimeType: mimeType || fileBlob.type });
+        
+        // Convert blob to buffer for Gemini API
+        const arrayBuffer = await fileBlob.arrayBuffer();
+        const buffer = Buffer.from(arrayBuffer);
+        
+        // Use the existing GeminiService uploadFileToGemini method
+        const result = await geminiService.uploadFileToGemini({
+          data: buffer,
+          mimeType: mimeType || fileBlob.type || 'application/octet-stream',
+          displayName: fileName
+        });
+        
+        console.log('[chat] uploadFileToGemini: file uploaded successfully', { uri: result.uri });
+        return result.uri;
+      } catch (error) {
+        console.error('[chat] uploadFileToGemini: error uploading to Gemini:', error);
+        return null;
+      }
     };
 
     const chunkText = (text: string, maxBytes = 200 * 1024) => {
@@ -196,6 +219,30 @@ export async function POST(request: Request) {
         return null;
       }
     };
+    const extractStoragePathFromUrl = (url: string): string => {
+      // If it's already a storage path (doesn't start with http), return as-is
+      if (!url.startsWith('http')) {
+        return url;
+      }
+
+      // Extract storage path from signed URL
+      // Format: https://xyz.supabase.co/storage/v1/object/sign/bucket-name/path?token=...
+      try {
+        const urlObj = new URL(url);
+        const pathParts = urlObj.pathname.split('/');
+        const signIndex = pathParts.indexOf('sign');
+        if (signIndex !== -1 && pathParts.length > signIndex + 2) {
+          // Skip 'sign' and bucket name, get the rest
+          return pathParts.slice(signIndex + 2).join('/');
+        }
+      } catch (e) {
+        console.warn('[chat] Failed to extract storage path from URL:', url);
+      }
+
+      // Fallback: return the original URL and hope it works
+      return url;
+    };
+
 
     // Build base context (no automatic RAG). We'll only inject summaries for explicit filename intents below.
     const context: ChatContext = {
@@ -208,58 +255,82 @@ export async function POST(request: Request) {
       ragSnippets: []
     };
 
-    // Handle explicit command: file: <filename> (summarize & inject summary)
+    // Handle explicit command: file: <filename> (upload to Gemini and use fileData)
     let finalMessage = message;
     let augmentedContext = { ...context } as ChatContext;
-    const fileCmdMatch = /^\s*file:\s*(.+)$/i.exec(message);
+    const fileCmdMatch = /file:\s*([^\n\r]+)/i.exec(message);
     if (fileCmdMatch) {
-      const requested = fileCmdMatch[1].trim();
+      const requested = fileCmdMatch[1].trim().replace(/["'`]/g, '').replace(/[?。！!]+$/, '');
       console.log('[chat] file: command detected', { requested });
 
+      // Inline content short-circuit: use content_text if available
+      try {
+        const inline = await sql`
+          SELECT title, content_text FROM uploaded_files
+          WHERE group_id = ${groupId} AND is_inline_content = true AND (
+            title = ${requested} OR title ILIKE ${'%' + requested + '%'}
+          )
+          ORDER BY uploaded_at DESC
+          LIMIT 1
+        ` as { title: string; content_text: string | null }[];
+        if (inline.length) {
+          const text = (inline[0].content_text || '').toString();
+          if (text.trim()) {
+            const summary = await geminiService.summarizeLongText(text, { title: inline[0].title });
+            return NextResponse.json({ response: summary, isCommand: false, requiresPermission: false });
+          }
+        }
+      } catch {}
+
       // Try with storage_path first, fallback to file_url if column doesn't exist
-      let candidates: { title: string; storage_path: string }[];
+      let candidates: { title: string; storage_path: string; mime_type?: string }[];
       try {
         candidates = await sql`
           (
-            SELECT title, storage_path FROM uploaded_files 
+            SELECT title, storage_path, mime_type FROM uploaded_files 
             WHERE group_id = ${groupId} AND title = ${requested}
           )
           UNION ALL
           (
-            SELECT title, storage_path FROM uploaded_files 
+            SELECT title, storage_path, mime_type FROM uploaded_files 
             WHERE group_id = ${groupId} AND title ILIKE ${'%' + requested + '%'}
             ORDER BY uploaded_at DESC
             LIMIT 5
           )
-        ` as { title: string; storage_path: string }[];
+        ` as { title: string; storage_path: string; mime_type?: string }[];
       } catch (error) {
         console.log('[chat] storage_path column not found, using file_url fallback');
-        // If storage_path doesn't exist, we need to reconstruct the path from the stored file_url
-        // The file_url should contain the storage path, not a signed URL
         const fallbackCandidates = await sql`
-          (
-            SELECT title, file_url as storage_path FROM uploaded_files 
-            WHERE group_id = ${groupId} AND title = ${requested}
-          )
-          UNION ALL
-          (
-            SELECT title, file_url as storage_path FROM uploaded_files 
-            WHERE group_id = ${groupId} AND title ILIKE ${'%' + requested + '%'}
-            ORDER BY uploaded_at DESC
-            LIMIT 5
-          )
-        ` as { title: string; storage_path: string }[];
-        candidates = fallbackCandidates;
+    (
+      SELECT title, file_url FROM uploaded_files 
+      WHERE group_id = ${groupId} AND title = ${requested}
+    )
+    UNION ALL
+    (
+      SELECT title, file_url FROM uploaded_files 
+      WHERE group_id = ${groupId} AND title ILIKE ${'%' + requested + '%'}
+      ORDER BY uploaded_at DESC
+      LIMIT 5
+    )
+  ` as { title: string; file_url: string }[];
+
+        // Convert URLs to storage paths
+        candidates = fallbackCandidates.map(f => ({
+          title: f.title,
+          storage_path: extractStoragePathFromUrl(f.file_url),
+          mime_type: 'application/octet-stream'
+        }));
       }
       console.log('[chat] file: candidates found', { count: candidates.length });
 
       if (!candidates.length) {
-        return NextResponse.json({ response: 'No similar file found.', isCommand: false });
+        return NextResponse.json({ response: `No similar file found for "${requested}". Try "list files".`, isCommand: false });
       }
 
       const chosen = candidates[0];
       console.log('[chat] file: chosen', { title: chosen.title, path: chosen.storage_path });
 
+      // Download file and upload to Gemini
       const fileBlob = await downloadFile(chosen.storage_path);
       console.log('[chat] file: download result', { success: fileBlob ? 'SUCCESS' : 'FAILED' });
       if (!fileBlob) {
@@ -268,16 +339,54 @@ export async function POST(request: Request) {
       }
       console.log('[chat] file: file downloaded successfully');
 
-      const text = await extractText(fileBlob, chosen.storage_path);
-      console.log('[chat] file: extracted text length', { length: text?.length || 0 });
-
-      if (!text || !text.trim()) {
-        augmentedContext = { ...augmentedContext, ragSnippets: [{ fileName: `${chosen.title} (summary)`, snippet: 'No readable text could be extracted from this file.' }] };
-        finalMessage = message;
-      } else {
-        const summary = await geminiService.summarizeLongText(text, { title: chosen.title });
-        console.log('[chat] file: summary length', { length: summary?.length || 0 });
-        augmentedContext = { ...augmentedContext, ragSnippets: [{ fileName: `${chosen.title} (summary)`, snippet: summary }] };
+      // Upload file to Gemini and get file URI
+      try {
+        const geminiFileUri = await uploadFileToGemini(fileBlob, chosen.title, chosen.mime_type);
+        console.log('[chat] file: uploaded to Gemini', { uri: geminiFileUri });
+        
+        if (geminiFileUri) {
+          augmentedContext = {
+            ...augmentedContext,
+            ragFileUris: [...(augmentedContext.ragFileUris || []), {
+              fileName: chosen.title,
+              uri: geminiFileUri,
+              mimeType: chosen.mime_type || fileBlob.type || 'application/octet-stream'
+            }]
+          };
+          finalMessage = message;
+        } else {
+          // Fallback to text extraction if Gemini upload fails
+          const text = await extractText(fileBlob, chosen.storage_path);
+          if (text && text.trim()) {
+            const summary = await geminiService.summarizeLongText(text, { title: chosen.title });
+            augmentedContext = {
+              ...augmentedContext,
+              ragSnippets: [...(augmentedContext.ragSnippets || []), { fileName: `${chosen.title} (summary)`, snippet: summary }]
+            };
+          } else {
+            augmentedContext = {
+              ...augmentedContext,
+              ragSnippets: [...(augmentedContext.ragSnippets || []), { fileName: `${chosen.title} (summary)`, snippet: 'No readable text could be extracted from this file.' }]
+            };
+          }
+          finalMessage = message;
+        }
+      } catch (error) {
+        console.error('[chat] file: error uploading to Gemini, falling back to text extraction:', error);
+        // Fallback to text extraction
+        const text = await extractText(fileBlob, chosen.storage_path);
+        if (text && text.trim()) {
+          const summary = await geminiService.summarizeLongText(text, { title: chosen.title });
+          augmentedContext = {
+            ...augmentedContext,
+            ragSnippets: [...(augmentedContext.ragSnippets || []), { fileName: `${chosen.title} (summary)`, snippet: summary }]
+          };
+        } else {
+          augmentedContext = {
+            ...augmentedContext,
+            ragSnippets: [...(augmentedContext.ragSnippets || []), { fileName: `${chosen.title} (summary)`, snippet: 'No readable text could be extracted from this file.' }]
+          };
+        }
         finalMessage = message;
       }
     }
@@ -289,38 +398,62 @@ export async function POST(request: Request) {
       const candidateName = (quoted?.[1] || withExt?.[1] || '').trim();
       if (candidateName) {
         console.log('[chat] autodetect: candidate name', { candidateName });
+        // Inline content short-circuit
+        try {
+          const inline = await sql`
+            SELECT title, content_text FROM uploaded_files
+            WHERE group_id = ${groupId} AND is_inline_content = true AND (
+              title = ${candidateName} OR title ILIKE ${'%' + candidateName + '%'}
+            )
+            ORDER BY uploaded_at DESC
+            LIMIT 1
+          ` as { title: string; content_text: string | null }[];
+          if (inline.length) {
+            const text = (inline[0].content_text || '').toString();
+            if (text.trim()) {
+              const summary = await geminiService.summarizeLongText(text, { title: inline[0].title });
+              return NextResponse.json({ response: summary, isCommand: false, requiresPermission: false });
+            }
+          }
+        } catch {}
         // Try with storage_path first, fallback to file_url if column doesn't exist
-        let candidates: { title: string; storage_path: string }[];
+        let candidates: { title: string; storage_path: string; mime_type?: string }[];
         try {
           candidates = await sql`
             (
-              SELECT title, storage_path FROM uploaded_files 
+              SELECT title, storage_path, mime_type FROM uploaded_files 
               WHERE group_id = ${groupId} AND title = ${candidateName}
             )
             UNION ALL
             (
-              SELECT title, storage_path FROM uploaded_files 
+              SELECT title, storage_path, mime_type FROM uploaded_files 
               WHERE group_id = ${groupId} AND title ILIKE ${'%' + candidateName + '%'}
               ORDER BY uploaded_at DESC
               LIMIT 5
             )
-          ` as { title: string; storage_path: string }[];
+          ` as { title: string; storage_path: string; mime_type?: string }[];
         } catch (error) {
           console.log('[chat] autodetect: storage_path column not found, using file_url fallback');
           const fallbackCandidates = await sql`
             (
-              SELECT title, file_url as storage_path FROM uploaded_files 
+              SELECT title, file_url FROM uploaded_files
               WHERE group_id = ${groupId} AND title = ${candidateName}
             )
             UNION ALL
             (
-              SELECT title, file_url as storage_path FROM uploaded_files 
+              SELECT title, file_url FROM uploaded_files
               WHERE group_id = ${groupId} AND title ILIKE ${'%' + candidateName + '%'}
               ORDER BY uploaded_at DESC
-              LIMIT 5
+                LIMIT 5
             )
-          ` as { title: string; storage_path: string }[];
-          candidates = fallbackCandidates;
+          ` as { title: string; file_url: string }[];
+
+          // Convert URLs to storage paths
+          candidates = fallbackCandidates.map(f => ({
+            title: f.title,
+            storage_path: extractStoragePathFromUrl(f.file_url),
+            mime_type: 'application/octet-stream'
+          }));
         }
 
         console.log('[chat] autodetect: candidates found', { count: candidates.length });
@@ -336,19 +469,79 @@ export async function POST(request: Request) {
           }
           console.log('[chat] autodetect: file downloaded successfully');
 
-          const text = await extractText(fileBlob, chosen.storage_path);
-          console.log('[chat] autodetect: extracted text length', { length: text?.length || 0 });
-
-          if (!text || !text.trim()) {
-            augmentedContext = { ...augmentedContext, ragSnippets: [{ fileName: `${chosen.title} (summary)`, snippet: 'No readable text could be extracted from this file.' }] };
-            finalMessage = message;
-          } else {
-            const summary = await geminiService.summarizeLongText(text, { title: chosen.title });
-            console.log('[chat] autodetect: summary length', { length: summary?.length || 0 });
-            augmentedContext = { ...augmentedContext, ragSnippets: [{ fileName: `${chosen.title} (summary)`, snippet: summary }] };
+          // Upload file to Gemini and get file URI
+          try {
+            const geminiFileUri = await uploadFileToGemini(fileBlob, chosen.title, chosen.mime_type);
+            console.log('[chat] autodetect: uploaded to Gemini', { uri: geminiFileUri });
+            
+            if (geminiFileUri) {
+              augmentedContext = {
+                ...augmentedContext,
+                ragFileUris: [...(augmentedContext.ragFileUris || []), {
+                  fileName: chosen.title,
+                  uri: geminiFileUri,
+                  mimeType: chosen.mime_type || fileBlob.type || 'application/octet-stream'
+                }]
+              };
+              finalMessage = message;
+            } else {
+              // Fallback to text extraction if Gemini upload fails
+              const text = await extractText(fileBlob, chosen.storage_path);
+              if (text && text.trim()) {
+                const summary = await geminiService.summarizeLongText(text, { title: chosen.title });
+                augmentedContext = {
+                  ...augmentedContext,
+                  ragSnippets: [...(augmentedContext.ragSnippets || []), { fileName: `${chosen.title} (summary)`, snippet: summary }]
+                };
+              } else {
+                augmentedContext = {
+                  ...augmentedContext,
+                  ragSnippets: [...(augmentedContext.ragSnippets || []), { fileName: `${chosen.title} (summary)`, snippet: 'No readable text could be extracted from this file.' }]
+                };
+              }
+              finalMessage = message;
+            }
+          } catch (error) {
+            console.error('[chat] autodetect: error uploading to Gemini, falling back to text extraction:', error);
+            // Fallback to text extraction
+            const text = await extractText(fileBlob, chosen.storage_path);
+            if (text && text.trim()) {
+              const summary = await geminiService.summarizeLongText(text, { title: chosen.title });
+              augmentedContext = {
+                ...augmentedContext,
+                ragSnippets: [...(augmentedContext.ragSnippets || []), { fileName: `${chosen.title} (summary)`, snippet: summary }]
+              };
+            } else {
+              augmentedContext = {
+                ...augmentedContext,
+                ragSnippets: [...(augmentedContext.ragSnippets || []), { fileName: `${chosen.title} (summary)`, snippet: 'No readable text could be extracted from this file.' }]
+              };
+            }
             finalMessage = message;
           }
         }
+      }
+    }
+
+    // If user asked for a list of files, return list directly
+    const listIntent = /(what\s+(are\s+)?the\s+files|which\s+files|list\s+files|show\s+files|all\s+files|files\?|files\s+available|files\s+can\s+i\s+access|what\s+are\s+the\s+files\s+i\s+can\s+access)/i.test(message);
+    if (listIntent) {
+      try {
+        const rows = await sql`
+          SELECT title, is_inline_content, mime_type, uploaded_at
+          FROM uploaded_files
+          WHERE group_id = ${groupId}
+          ORDER BY uploaded_at DESC
+          LIMIT 50
+        ` as { title: string; is_inline_content: boolean; mime_type: string | null; uploaded_at: string }[];
+        if (!rows.length) {
+          return NextResponse.json({ response: 'No files found for this group.', isCommand: false, requiresPermission: false });
+        }
+        const lines = rows.map(r => `- ${r.title} ${r.is_inline_content ? '(inline)' : '(file)'}${r.mime_type ? ` · ${r.mime_type}` : ''}`);
+        return NextResponse.json({ response: `Here are recent files:\n${lines.join('\n')}`, isCommand: false, requiresPermission: false });
+      } catch (e) {
+        console.error('[chat] list files failed', e);
+        return NextResponse.json({ response: 'Failed to list files.', isCommand: false, requiresPermission: false });
       }
     }
 
