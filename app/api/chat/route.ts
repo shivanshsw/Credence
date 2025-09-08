@@ -258,9 +258,14 @@ export async function POST(request: Request) {
     // Handle explicit command: file: <filename> (upload to Gemini and use fileData)
     let finalMessage = message;
     let augmentedContext = { ...context } as ChatContext;
-    const fileCmdMatch = /file:\s*([^\n\r]+)/i.exec(message);
+    const fileCmdMatch = /file:\s*("[^"]+"|\S+)/i.exec(message);
     if (fileCmdMatch) {
-      const requested = fileCmdMatch[1].trim().replace(/["'`]/g, '').replace(/[?。！!]+$/, '');
+      const requestedPart = fileCmdMatch[1] || '';
+      const requested = requestedPart
+        .trim()
+        .replace(/^"|"$/g, '')
+        .split(/[\s\?\.,;:]/)[0]
+        .trim();
       console.log('[chat] file: command detected', { requested });
 
       // Inline content short-circuit: use content_text if available
@@ -276,8 +281,20 @@ export async function POST(request: Request) {
         if (inline.length) {
           const text = (inline[0].content_text || '').toString();
           if (text.trim()) {
-            const summary = await geminiService.summarizeLongText(text, { title: inline[0].title });
-            return NextResponse.json({ response: summary, isCommand: false, requiresPermission: false });
+            // Provide the inline text as context and proceed to normal answer generation
+            const chunks = chunkText(text, 200 * 1024);
+            augmentedContext = {
+              ...augmentedContext,
+              ragSnippets: [...(augmentedContext.ragSnippets || []), ...chunks.map((c, i) => ({ fileName: `${inline[0].title} (inline ${i+1})`, snippet: c }))]
+            };
+            finalMessage = message;
+            // Skip storage path branch by jumping to response generation below
+            const aiResponse = await geminiService.generateChatResponse(finalMessage, augmentedContext);
+            return NextResponse.json({
+              response: aiResponse.response,
+              isCommand: aiResponse.isCommand,
+              requiresPermission: aiResponse.requiresPermission
+            });
           }
         }
       } catch {}
@@ -411,8 +428,18 @@ export async function POST(request: Request) {
           if (inline.length) {
             const text = (inline[0].content_text || '').toString();
             if (text.trim()) {
-              const summary = await geminiService.summarizeLongText(text, { title: inline[0].title });
-              return NextResponse.json({ response: summary, isCommand: false, requiresPermission: false });
+              const chunks = chunkText(text, 200 * 1024);
+              augmentedContext = {
+                ...augmentedContext,
+                ragSnippets: [...(augmentedContext.ragSnippets || []), ...chunks.map((c, i) => ({ fileName: `${inline[0].title} (inline ${i+1})`, snippet: c }))]
+              };
+              finalMessage = message;
+              const aiResponse = await geminiService.generateChatResponse(finalMessage, augmentedContext);
+              return NextResponse.json({
+                response: aiResponse.response,
+                isCommand: aiResponse.isCommand,
+                requiresPermission: aiResponse.requiresPermission
+              });
             }
           }
         } catch {}
@@ -527,7 +554,7 @@ export async function POST(request: Request) {
     const listIntent = /(what\s+(are\s+)?the\s+files|which\s+files|list\s+files|show\s+files|all\s+files|files\?|files\s+available|files\s+can\s+i\s+access|what\s+are\s+the\s+files\s+i\s+can\s+access)/i.test(message);
     if (listIntent) {
       try {
-        const rows = await sql`
+        let rows = await sql`
           SELECT title, is_inline_content, mime_type, uploaded_at
           FROM uploaded_files
           WHERE group_id = ${groupId}
@@ -540,8 +567,24 @@ export async function POST(request: Request) {
         const lines = rows.map(r => `- ${r.title} ${r.is_inline_content ? '(inline)' : '(file)'}${r.mime_type ? ` · ${r.mime_type}` : ''}`);
         return NextResponse.json({ response: `Here are recent files:\n${lines.join('\n')}`, isCommand: false, requiresPermission: false });
       } catch (e) {
-        console.error('[chat] list files failed', e);
-        return NextResponse.json({ response: 'Failed to list files.', isCommand: false, requiresPermission: false });
+        console.error('[chat] list files failed primary select', e);
+        try {
+          const rowsFallback = await sql`
+            SELECT title, uploaded_at
+            FROM uploaded_files
+            WHERE group_id = ${groupId}
+            ORDER BY uploaded_at DESC
+            LIMIT 50
+          ` as { title: string; uploaded_at: string }[];
+          if (!rowsFallback.length) {
+            return NextResponse.json({ response: 'No files found for this group.', isCommand: false, requiresPermission: false });
+          }
+          const lines = rowsFallback.map(r => `- ${r.title}`);
+          return NextResponse.json({ response: `Here are recent files:\n${lines.join('\n')}`, isCommand: false, requiresPermission: false });
+        } catch (e2) {
+          console.error('[chat] list files failed fallback select', e2);
+          return NextResponse.json({ response: 'Failed to list files.', isCommand: false, requiresPermission: false });
+        }
       }
     }
 

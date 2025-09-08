@@ -5,6 +5,8 @@ import type React from "react"
 import { Avatar, AvatarFallback } from "@/components/ui/avatar"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { cn } from "@/lib/utils"
+import ReactMarkdown from 'react-markdown'
+import remarkGfm from 'remark-gfm'
 
 export function ChatMessage({
   role,
@@ -49,7 +51,13 @@ export function ChatMessage({
             <span className="text-xs font-medium text-red-400">⚠ Permission Required</span>
           </div>
         )}
-        {children}
+        {typeof children === 'string' ? (
+          <div className="prose prose-invert prose-sm max-w-none">
+            <ReactMarkdown remarkPlugins={[remarkGfm]}>{children as string}</ReactMarkdown>
+          </div>
+        ) : (
+          children
+        )}
         {requiresPermission === 'permission_denied' && !isUser && (
           <div className="mt-3">
             <button

@@ -156,8 +156,8 @@ RESPONSE FORMAT:
 FORMATTING RULES:
 - Use **double asterisks** for bold text (example: **bold**)
 - Use *single asterisk* for italics (example: *italic*)
-- Use \\n for new lines
-- Do not use any other markdown or formatting styles
+- Use \n for new lines
+- You may include 1-3 relevant emoji to enhance clarity (e.g., ✅📌📅), but keep them tasteful and relevant to the answer length.
 
 Example command response:
 COMMAND: {"type": "task_assignment", "title": "Q3 Report", "description": "Complete quarterly report", "assignedTo": ["user1@email.com", "user2@email.com"], "dueDate": "2024-01-15", "priority": "high", "groupId": "${context.groupId}"}
