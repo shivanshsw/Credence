@@ -255,6 +255,12 @@ export async function POST(request: Request) {
       ragSnippets: []
     };
 
+    // Detect assignment intent keywords and let LLM structure it, instead of processing directly
+    const intentAssign = /(\bassign\b|\bschedule\b|\bdelegate\b|\bcreate task\b|\badd task\b)/i.test(message);
+    if (intentAssign) {
+      // Proceed to LLM with context; it will return COMMAND JSON when confident
+    }
+
     // Handle explicit command: file: <filename> (upload to Gemini and use fileData)
     let finalMessage = message;
     let augmentedContext = { ...context } as ChatContext;
@@ -624,7 +630,12 @@ export async function POST(request: Request) {
           canAssign = isAdmin || await rbacService.hasPermission(userId, 'task_assignment:create');
         } catch (_) { canAssign = false; }
         if (!canAssign) {
-          return NextResponse.json({ error: 'You do not have permission to assign tasks.' }, { status: 403 });
+          // Return styled permission denial (chat-friendly), not HTTP 403
+          return NextResponse.json({
+            response: 'You do not have permission to assign tasks. Please contact an admin.',
+            isCommand: false,
+            requiresPermission: 'permission_denied'
+          });
         }
 
         const assignedUserIds: string[] = [];
@@ -660,7 +671,7 @@ export async function POST(request: Request) {
 
         // Create tasks for each assigned user
         for (const assignedUserId of uniqueUserIds) {
-          await tasksService.createTask({
+          const created = await tasksService.createTask({
             title: aiResponse.taskAssignment.title,
             description: aiResponse.taskAssignment.description,
             assignedToUserId: assignedUserId,

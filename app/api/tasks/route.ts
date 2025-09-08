@@ -31,23 +31,16 @@ export async function GET(request: Request) {
     
     const userId = users[0].id;
 
-    // Check permissions
-    const hasReadPermission = await rbacService.hasPermission(userId, 'task_assignment:read');
-    if (!hasReadPermission) {
-      return NextResponse.json({ error: 'Insufficient permissions' }, { status: 403 });
-    }
-
+    // For individual flow: always allow user to read their own tasks
     let tasks = [] as any[];
     if (scope === 'all') {
-      // Admins get all tasks
       const isAdmin = await rbacService.userHasRole(userId, 'admin');
       if (!isAdmin) {
         return NextResponse.json({ error: 'Admin access required' }, { status: 403 });
       }
       tasks = await tasksService.getAllTasks();
-    } else if (groupId) {
-      tasks = await tasksService.getTasksForGroup(groupId);
     } else {
+      // Return user tasks (ignore group-level read perms for personal usage)
       tasks = await tasksService.getTasksForUser(userId);
     }
 
@@ -57,6 +50,27 @@ export async function GET(request: Request) {
     console.error('Tasks GET error:', error);
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
   }
+}
+
+// Helper: ensure personal group exists and return its id
+async function getOrCreatePersonalGroupId(userId: string): Promise<string> {
+  // Try find existing
+  const existing = await sql`
+    SELECT id FROM groups WHERE created_by = ${userId} AND name = 'Personal'
+  ` as { id: string }[];
+  if (existing.length) return existing[0].id;
+
+  // Create new personal group and add membership
+  const inserted = await sql`
+    INSERT INTO groups (name, created_by)
+    VALUES ('Personal', ${userId})
+    RETURNING id
+  ` as { id: string }[];
+  const groupId = inserted[0].id;
+  try {
+    await sql`INSERT INTO group_members (group_id, user_id, role) VALUES (${groupId}, ${userId}, 'member')`;
+  } catch {}
+  return groupId;
 }
 
 // POST: Create a new task
@@ -84,17 +98,20 @@ export async function POST(request: Request) {
     
     const userId = users[0].id;
 
-    // Check permissions
-    const hasCreatePermission = await rbacService.hasPermission(userId, 'task_assignment:create');
-    if (!hasCreatePermission) {
-      return NextResponse.json({ error: 'Insufficient permissions' }, { status: 403 });
-    }
-
-    // Resolve defaults
+    // Resolve defaults for individual tasks: assign to self and attach to personal group
     const resolvedAssignedTo = assignedToUserId || userId;
-    const resolvedGroupId = groupId || null;
-    if (!resolvedGroupId) {
-      return NextResponse.json({ error: 'groupId is required' }, { status: 400 });
+    const resolvedGroupId = groupId || await getOrCreatePersonalGroupId(userId);
+
+    // Permission model: allow self-assignment in personal group without extra permission
+    // If assigning to others or non-personal groups, require permission
+    let requirePermission = false;
+    if (resolvedAssignedTo !== userId) requirePermission = true;
+    if (groupId && groupId !== (await getOrCreatePersonalGroupId(userId))) requirePermission = true;
+    if (requirePermission) {
+      const hasCreatePermission = await rbacService.hasPermission(userId, 'task_assignment:create');
+      if (!hasCreatePermission) {
+        return NextResponse.json({ error: 'Insufficient permissions' }, { status: 403 });
+      }
     }
 
     const task = await tasksService.createTask({

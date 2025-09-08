@@ -8,7 +8,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
-import { Plus, Search, Calendar, User, CheckCircle, Clock, AlertCircle } from "lucide-react"
+import { Plus, Search, Calendar } from "lucide-react"
 import { useAuth } from "@/components/auth-context"
 import AppShell from "@/components/app-shell"
 
@@ -37,6 +37,8 @@ export default function TasksPage() {
   const [statusFilter, setStatusFilter] = useState("all")
   const [isCreateOpen, setIsCreateOpen] = useState(false)
   const [editingTask, setEditingTask] = useState<Task | null>(null)
+  const [availableGroups, setAvailableGroups] = useState<Array<{ id: string; name: string; role: string }>>([])
+  const [createGroupId, setCreateGroupId] = useState<string | null>(null)
 
   // Form state for creating/editing tasks
   const [formData, setFormData] = useState({
@@ -49,6 +51,20 @@ export default function TasksPage() {
   useEffect(() => {
     fetchTasks()
   }, [selectedGroup])
+
+  // For individual tasks, we still load groups so user can optionally attach to a group later; default to Personal via API
+  useEffect(() => {
+    const loadGroups = async () => {
+      try {
+        const res = await fetch('/api/security/access', { credentials: 'include' })
+        if (!res.ok) return
+        const data = await res.json().catch(() => ({}))
+        const groups = Array.isArray(data.data) ? data.data : []
+        setAvailableGroups(groups)
+      } catch {}
+    }
+    loadGroups()
+  }, [])
 
   const fetchTasks = async () => {
     try {
@@ -73,7 +89,7 @@ export default function TasksPage() {
   }
 
   const createTask = async () => {
-    if (!selectedGroup) return
+    // createGroupId optional; API will fallback to personal group
 
     try {
       const response = await fetch('/api/tasks', {
@@ -84,7 +100,7 @@ export default function TasksPage() {
         credentials: 'include',
         body: JSON.stringify({
           ...formData,
-          groupId: selectedGroup.id
+          groupId: createGroupId || undefined
         })
       })
 
@@ -93,6 +109,9 @@ export default function TasksPage() {
         setTasks(prev => [newTask, ...prev])
         setFormData({ title: "", description: "", dueDate: "", priority: "medium" })
         setIsCreateOpen(false)
+      } else {
+        const err = await response.json().catch(() => ({}))
+        alert(err.error || 'Failed to create task')
       }
     } catch (error) {
       console.error('Error creating task:', error)
@@ -166,52 +185,64 @@ export default function TasksPage() {
       <div className="flex h-[calc(100vh-120px)] flex-col gap-4">
         <div className="flex items-center justify-between">
           <h1 className="text-2xl font-bold">Tasks</h1>
-          <Dialog open={isCreateOpen} onOpenChange={setIsCreateOpen}>
-            <DialogTrigger asChild>
-              <Button className="bg-teal-600 hover:bg-teal-500">
-                <Plus className="h-4 w-4 mr-2" />
-                New Task
-              </Button>
-            </DialogTrigger>
-            <DialogContent>
-              <DialogHeader>
-                <DialogTitle>Create New Task</DialogTitle>
-              </DialogHeader>
-              <div className="space-y-4">
-                <Input
-                  placeholder="Task title"
-                  value={formData.title}
-                  onChange={(e) => setFormData(prev => ({ ...prev, title: e.target.value }))}
-                />
-                <Textarea
-                  placeholder="Task description"
-                  value={formData.description}
-                  onChange={(e) => setFormData(prev => ({ ...prev, description: e.target.value }))}
-                  rows={4}
-                />
-                {/* Removed explicit user ID field; assignment handled elsewhere */}
-                <Input
-                  type="date"
-                  placeholder="Due date"
-                  value={formData.dueDate}
-                  onChange={(e) => setFormData(prev => ({ ...prev, dueDate: e.target.value }))}
-                />
-                <Select value={formData.priority} onValueChange={(value: 'low' | 'medium' | 'high') => setFormData(prev => ({ ...prev, priority: value }))}>
-                  <SelectTrigger>
-                    <SelectValue placeholder="Priority" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="low">Low</SelectItem>
-                    <SelectItem value="medium">Medium</SelectItem>
-                    <SelectItem value="high">High</SelectItem>
-                  </SelectContent>
-                </Select>
-                <Button onClick={createTask} className="w-full">
-                  Create Task
+          <div className="flex items-center gap-2">
+            <Dialog open={isCreateOpen} onOpenChange={(open) => { setIsCreateOpen(open); if (open) { setCreateGroupId(selectedGroup?.id || availableGroups[0]?.id || null) } }}>
+              <DialogTrigger asChild>
+                <Button className="bg-teal-600 hover:bg-teal-500">
+                  <Plus className="h-4 w-4 mr-2" />
+                  New Task
                 </Button>
-              </div>
-            </DialogContent>
-          </Dialog>
+              </DialogTrigger>
+              <DialogContent>
+                <DialogHeader>
+                  <DialogTitle>Create New Task</DialogTitle>
+                </DialogHeader>
+                <div className="space-y-4">
+                  <Select value={createGroupId || undefined} onValueChange={(value) => setCreateGroupId(value)}>
+                    <SelectTrigger>
+                      <SelectValue placeholder="Select group" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {availableGroups.map(g => (
+                        <SelectItem key={g.id} value={g.id}>{g.name}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  <Input
+                    placeholder="Task title"
+                    value={formData.title}
+                    onChange={(e) => setFormData(prev => ({ ...prev, title: e.target.value }))}
+                  />
+                  <Textarea
+                    placeholder="Task description"
+                    value={formData.description}
+                    onChange={(e) => setFormData(prev => ({ ...prev, description: e.target.value }))}
+                    rows={4}
+                  />
+                  {/* Removed explicit user ID field; assignment handled elsewhere */}
+                  <Input
+                    type="date"
+                    placeholder="Due date"
+                    value={formData.dueDate}
+                    onChange={(e) => setFormData(prev => ({ ...prev, dueDate: e.target.value }))}
+                  />
+                  <Select value={formData.priority} onValueChange={(value: 'low' | 'medium' | 'high') => setFormData(prev => ({ ...prev, priority: value }))}>
+                    <SelectTrigger>
+                      <SelectValue placeholder="Priority" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="low">Low</SelectItem>
+                      <SelectItem value="medium">Medium</SelectItem>
+                      <SelectItem value="high">High</SelectItem>
+                    </SelectContent>
+                  </Select>
+                  <Button onClick={createTask} className="w-full">
+                    Create Task
+                  </Button>
+                </div>
+              </DialogContent>
+            </Dialog>
+          </div>
         </div>
 
         <div className="flex items-center gap-4">
@@ -257,28 +288,7 @@ export default function TasksPage() {
                   <div className="flex items-start justify-between">
                     <CardTitle className="text-lg">{task.title}</CardTitle>
                     <div className="flex gap-2">
-                      <Button
-                        size="sm"
-                        variant="ghost"
-                        onClick={async () => {
-                          try {
-                            const res = await fetch('/api/google-calendar/create-event', {
-                              method: 'POST',
-                              headers: { 'Content-Type': 'application/json' },
-                              credentials: 'include',
-                              body: JSON.stringify({
-                                title: task.title,
-                                description: task.description,
-                                due_date: task.dueDate || new Date().toISOString()
-                              })
-                            })
-                            if (!res.ok) return
-                            await res.json()
-                          } catch {}
-                        }}
-                      >
-                        Add to Google Calendar
-                      </Button>
+                      
                       <Button
                         size="sm"
                         variant="ghost"
