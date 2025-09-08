@@ -21,12 +21,20 @@ const mockRequests: AccessRequest[] = [
   { id: "req-2", requester: "Dev", tool: "Cashflow Analyzer", status: "pending", requestedAt: "2025-08-26 15:03" },
 ]
 
-const auditLog = Array.from({ length: 20 }).map((_, i) => ({
-  id: `log-${i}`,
-  action: i % 5 === 0 ? "Permission changed" : i % 3 === 0 ? "2FA verified" : "Login successful",
-  user: i % 4 === 0 ? "Kranson" : i % 2 === 0 ? "Ananya" : "Rahul",
-  ts: `2025-08-${(20 + (i % 10)).toString().padStart(2, "0")} ${String(9 + (i % 9)).padStart(2, "0")}:${String(10 + (i % 50)).padStart(2, "0")}`,
-}))
+const auditLog = [
+  {
+    id: "log-current",
+    action: "User signed in",
+    user: "Current User",
+    ts: new Date().toLocaleString(),
+  },
+  ...Array.from({ length: 20 }).map((_, i) => ({
+    id: `log-${i}`,
+    action: i % 5 === 0 ? "Permission changed" : i % 3 === 0 ? "2FA verified" : "Login successful",
+    user: i % 4 === 0 ? "Kranson" : i % 2 === 0 ? "Ananya" : "Rahul",
+    ts: `2025-08-${(20 + (i % 10)).toString().padStart(2, "0")} ${String(9 + (i % 9)).padStart(2, "0")}:${String(10 + (i % 50)).padStart(2, "0")}`,
+  }))
+]
 
 export default function SecurityPage() {
   const [requests, setRequests] = useState<AccessRequest[]>(mockRequests)
@@ -37,7 +45,7 @@ export default function SecurityPage() {
 
   return (
     <main className="h-full w-full overflow-hidden">
-      <div className="h-full flex flex-col gap-6 p-6 overflow-y-auto">
+      <div className="h-full flex flex-col gap-6 p-6 overflow-y-auto scrollbar-hide">
         {/* Header */}
         <div className="flex items-center justify-between">
           <h1 className="text-2xl font-semibold text-balance">Security</h1>
@@ -149,7 +157,7 @@ export default function SecurityPage() {
                 <Badge variant="outline">{requests.filter((r) => r.status === "pending").length} pending</Badge>
               </div>
               <Separator />
-              <div className="max-h-64 overflow-y-auto divide-y divide-border/40">
+              <div className="max-h-64 overflow-y-auto scrollbar-hide divide-y divide-border/40">
                 {requests.map((req) => (
                   <div key={req.id} className="flex items-center justify-between p-4 gap-4">
                     <div className="min-w-0">
@@ -207,7 +215,22 @@ export default function SecurityPage() {
             </Button>
           </CardHeader>
           <CardContent>
-            <div className="max-h-72 overflow-y-auto divide-y divide-border/40">
+            <div className="max-h-72 overflow-y-auto scrollbar-hide divide-y divide-border/40">
+              {/* Default logged in entry - highlighted */}
+              <div className="flex items-center justify-between py-3 bg-teal-500/10 border-l-4 border-teal-500 pl-3 -ml-3">
+                <div className="flex items-center gap-3 min-w-0">
+                  <div className="h-6 w-6 rounded-full bg-teal-500/20 flex items-center justify-center">
+                    <Shield className="h-4 w-4 text-teal-400" />
+                  </div>
+                  <div className="min-w-0">
+                    <div className="text-sm font-medium text-teal-300">User signed in</div>
+                    <div className="text-xs text-teal-400">
+                      Current User • {new Date().toLocaleString()}
+                    </div>
+                  </div>
+                </div>
+                <Badge className="bg-teal-500/20 text-teal-300 border-teal-500/30">Active</Badge>
+              </div>
               {auditLog.map((item) => (
                 <div key={item.id} className="flex items-center justify-between py-3">
                   <div className="flex items-center gap-3 min-w-0">

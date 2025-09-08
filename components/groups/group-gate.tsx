@@ -14,7 +14,7 @@ import {
   DialogClose,
 } from "@/components/ui/dialog";
 import { useAuth } from "@/components/auth-context";
-import { Copy, Users } from "lucide-react";
+import { Copy, Users, Building2, Plus, ArrowRight } from "lucide-react";
 import { toast } from "@/hooks/use-toast";
 
 type InviteMember = { email: string; role: string };
@@ -179,68 +179,81 @@ export default function GroupGate() {
   return (
       <section
           aria-labelledby="groups-title"
-          className="relative flex h-[calc(100vh-120px)] flex-col rounded-md border border-neutral-800 bg-neutral-950/50"
+          className="relative flex h-[calc(100vh-120px)] flex-col rounded-lg border border-neutral-800 bg-gradient-to-br from-neutral-950/50 to-neutral-900/30 backdrop-blur-sm"
       >
-        <header className="flex items-center justify-between border-b border-neutral-800 px-4 py-3">
-          <h1 id="groups-title" className="text-pretty text-sm font-semibold">
-            Your Groups
-          </h1>
-          <div className="flex gap-2">
+        <header className="flex items-center justify-between border-b border-neutral-800 px-6 py-4">
+          <div className="flex items-center gap-3">
+            <div className="p-2 rounded-lg bg-teal-500/10 border border-teal-500/20">
+              <Building2 className="w-5 h-5 text-teal-400" />
+            </div>
+            <div>
+              <h1 id="groups-title" className="text-lg font-semibold text-white">
+                Your Groups
+              </h1>
+              <p className="text-sm text-neutral-400">Manage your team workspaces</p>
+            </div>
+          </div>
+          <div className="flex gap-3">
             <Button
                 variant="outline"
                 onClick={() => setJoinOpen(true)}
-                className="border-blue-500/50 text-blue-400 hover:bg-blue-500/10"
+                className="border-blue-500/50 text-blue-400 hover:bg-blue-500/10 hover:border-blue-400/70 transition-all duration-200"
             >
               <Users className="w-4 h-4 mr-2" />
               Join Group
             </Button>
             <Button
-                variant="outline"
                 onClick={() => setOpen(true)}
-                className="border-teal-500/50 text-teal-400 hover:bg-teal-500/10"
+                className="bg-gradient-to-r from-teal-500 to-teal-600 hover:from-teal-600 hover:to-teal-700 text-white shadow-lg hover:shadow-teal-500/25 transition-all duration-200"
             >
-              Create a Group
+              <Plus className="w-4 h-4 mr-2" />
+              Create Group
             </Button>
           </div>
         </header>
 
-        <div className="flex min-h-0 flex-1 flex-col gap-3 p-3">
-          <div className="flex-1 min-h-0 overflow-y-auto rounded-md border border-neutral-900 bg-black p-4">
+        <div className="flex min-h-0 flex-1 flex-col gap-4 p-6">
+          <div className="flex-1 min-h-0 overflow-y-auto scrollbar-hide rounded-lg border border-neutral-800 bg-gradient-to-br from-neutral-950 to-neutral-900 p-6">
             {groups.length === 0 ? (
                 <div className="grid h-full place-items-center">
-                  <div className="text-center">
-                    <p className="mb-3 text-neutral-400">No groups yet.</p>
+                  <div className="text-center max-w-md">
+                    <div className="mx-auto w-16 h-16 rounded-full bg-gradient-to-br from-teal-500/20 to-teal-600/20 flex items-center justify-center mb-4">
+                      <Building2 className="w-8 h-8 text-teal-400" />
+                    </div>
+                    <h3 className="text-lg font-semibold text-white mb-2">No groups yet</h3>
+                    <p className="text-neutral-400 mb-6">Create your first group to start collaborating with your team</p>
                     <Button
-                        className="bg-teal-600 hover:bg-teal-500"
+                        className="bg-gradient-to-r from-teal-500 to-teal-600 hover:from-teal-600 hover:to-teal-700 text-white shadow-lg hover:shadow-teal-500/25 transition-all duration-200"
                         onClick={() => setOpen(true)}
                     >
+                      <Plus className="w-4 h-4 mr-2" />
                       Create your first group
                     </Button>
                   </div>
                 </div>
             ) : (
-                <ul className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+                <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
                   {groups.map((g) => (
-                      <li
+                      <div
                           key={g.id}
-                          className="rounded-lg border border-white/10 bg-neutral-950 p-4"
+                          className="group rounded-xl border border-neutral-700 bg-gradient-to-br from-neutral-900/50 to-neutral-800/30 p-6 hover:border-teal-500/50 hover:bg-gradient-to-br hover:from-teal-900/10 hover:to-teal-800/5 transition-all duration-300 cursor-pointer"
+                          onClick={() => selectGroup(g.id)}
                       >
+                        <div className="flex items-start justify-between mb-4">
+                          <div className="p-2 rounded-lg bg-teal-500/10 border border-teal-500/20 group-hover:bg-teal-500/20 transition-colors duration-200">
+                            <Building2 className="w-5 h-5 text-teal-400" />
+                          </div>
+                          <ArrowRight className="w-4 h-4 text-neutral-400 group-hover:text-teal-400 transition-colors duration-200" />
+                        </div>
+                        <h3 className="font-semibold text-white text-lg mb-2 group-hover:text-teal-100 transition-colors duration-200">{g.name}</h3>
+                        <p className="text-sm text-neutral-400 mb-4">Click to open this workspace</p>
                         <div className="flex items-center justify-between">
-                          <h3 className="font-medium text-foreground">{g.name}</h3>
+                          <span className="text-xs text-neutral-500">Active workspace</span>
+                          <div className="w-2 h-2 rounded-full bg-teal-500 animate-pulse"></div>
                         </div>
-                        <div className="mt-3 flex items-center gap-2">
-                          <Button
-                              size="sm"
-                              className="bg-teal-600 hover:bg-teal-500"
-                              onClick={() => selectGroup(g.id)}
-                              aria-label={`Open ${g.name}`}
-                          >
-                            Open
-                          </Button>
-                        </div>
-                      </li>
+                      </div>
                   ))}
-                </ul>
+                </div>
             )}
           </div>
         </div>
@@ -313,7 +326,7 @@ export default function GroupGate() {
               </div>
 
               {members.length > 0 && (
-                  <ul className="max-h-40 overflow-y-auto rounded border border-white/10 bg-neutral-950 p-2 text-sm">
+                  <ul className="max-h-40 overflow-y-auto scrollbar-hide rounded border border-white/10 bg-neutral-950 p-2 text-sm">
                     {members.map((m, i) => (
                         <li
                             key={`${m.email}-${i}`}

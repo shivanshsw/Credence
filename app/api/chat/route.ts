@@ -59,6 +59,12 @@ export async function POST(request: Request) {
 
     // TASK ASSIGNMENT DETECTION: Check if message contains task assignment patterns
     const taskAssignmentPatterns = [
+      // Patterns for dates with brackets and no spaces (most specific first)
+      /assign:\s*([^:]+?)\s+to\s+all\s+role:\s*([^\s]+?)(?:\s+for\s+date\s*<([^>]+)>)?/i,
+      /assign:\s*([^:]+?)\s+to\s+role:\s*([^\s]+?)(?:\s+for\s+date\s*<([^>]+)>)?/i,
+      /assign\s+([^:]+?)\s+to\s+all\s+role\s+([^\s]+?)(?:\s+for\s+date\s*<([^>]+)>)?/i,
+      /assign\s+([^:]+?)\s+to\s+role\s+([^\s]+?)(?:\s+for\s+date\s*<([^>]+)>)?/i,
+      // Original patterns
       /assign:\s*([^:]+?)\s+to\s+role:\s*([^\s]+?)(?:\s+for\s+date\s+([^\s]+))?/i,
       /assign\s+task:\s*([^:]+?)\s+to\s+all\s+role:\s*([^\s]+?)(?:\s+for\s+date\s+([^\s]+))?/i,
       /assign:\s*([^:]+?)\s+to\s+role:\s*([^\s]+?)(?:\s+for\s+([^\s]+))?/i,
@@ -97,38 +103,78 @@ export async function POST(request: Request) {
 
     // Enhanced date parsing with multiple formats
     const parseDate = (dateStr) => {
-      if (!dateStr) return null;
+      if (!dateStr) {
+        console.log('parseDate: No date string provided');
+        return null;
+      }
       
       try {
+        // Clean the date string - remove brackets and extra spaces
+        let cleanDate = dateStr.replace(/[<>]/g, '').trim();
+        console.log('parseDate: Cleaned date string:', cleanDate);
+        
         // Handle DD-MM-YYYY format
-        if (dateStr.includes('-') && dateStr.split('-')[0].length <= 2) {
-          const parts = dateStr.split('-');
+        if (cleanDate.includes('-') && cleanDate.split('-')[0].length <= 2) {
+          const parts = cleanDate.split('-');
+          console.log('parseDate: DD-MM-YYYY parts:', parts);
           if (parts.length === 3) {
             const day = parts[0].padStart(2, '0');
             const month = parts[1].padStart(2, '0');
             const year = parts[2];
             const isoDate = `${year}-${month}-${day}`;
+            console.log('parseDate: ISO date:', isoDate);
             const date = new Date(isoDate);
             if (!isNaN(date.getTime())) {
-              return date.toISOString();
+              const result = date.toISOString();
+              console.log('parseDate: Success - DD-MM-YYYY:', result);
+              return result;
             }
           }
         }
         
         // Handle YYYY-MM-DD format
-        const date = new Date(dateStr);
+        const date = new Date(cleanDate);
         if (!isNaN(date.getTime())) {
-          return date.toISOString();
+          const result = date.toISOString();
+          console.log('parseDate: Success - YYYY-MM-DD:', result);
+          return result;
         }
-      } catch {}
+        
+        // Try parsing as various date formats
+        const formats = [
+          cleanDate, // Original
+          cleanDate.replace(/\//g, '-'), // Convert slashes to dashes
+          cleanDate.replace(/\./g, '-'), // Convert dots to dashes
+        ];
+        
+        for (const format of formats) {
+          const testDate = new Date(format);
+          if (!isNaN(testDate.getTime())) {
+            const result = testDate.toISOString();
+            console.log('parseDate: Success - Alternative format:', result);
+            return result;
+          }
+        }
+        
+        console.log('parseDate: Failed to parse date:', cleanDate);
+      } catch (error) {
+        console.log('parseDate: Error parsing date:', error);
+      }
       
       return null;
     };
 
     let detectedTaskAssignment = null;
-    for (const pattern of taskAssignmentPatterns) {
+    for (let i = 0; i < taskAssignmentPatterns.length; i++) {
+      const pattern = taskAssignmentPatterns[i];
       const match = message.match(pattern);
       if (match) {
+        console.log(`Pattern ${i + 1} matched:`, {
+          pattern: pattern.toString(),
+          match: match,
+          message: message
+        });
+        
         const taskName = match[1].trim();
         const roleName = match[2].trim();
         const dateStr = match[3]?.trim();
@@ -137,7 +183,45 @@ export async function POST(request: Request) {
         const normalizedRole = normalizeRole(roleName);
 
         // Use enhanced date parsing
-        const dueDate = parseDate(dateStr);
+        let dueDate = parseDate(dateStr);
+        
+        // If no date was parsed from the specific group, try to find any date in the message
+        if (!dueDate) {
+          console.log('parseDate: No date found in group, searching entire message...');
+          const datePatterns = [
+            /<(\d{4}-\d{2}-\d{2})>/g,  // <2024-09-15>
+            /(\d{4}-\d{2}-\d{2})/g,    // 2024-09-15
+            /<(\d{2}-\d{2}-\d{4})>/g,  // <15-09-2024>
+            /(\d{2}-\d{2}-\d{4})/g,    // 15-09-2024
+            /<(\d{4}\/\d{2}\/\d{2})>/g, // <2024/09/15>
+            /(\d{4}\/\d{2}\/\d{2})/g,   // 2024/09/15
+          ];
+          
+          for (const pattern of datePatterns) {
+            const matches = message.match(pattern);
+            if (matches && matches.length > 0) {
+              const foundDate = parseDate(matches[0]);
+              if (foundDate) {
+                dueDate = foundDate;
+                console.log('parseDate: Found date in message:', matches[0], '->', dueDate);
+                break;
+              }
+            }
+          }
+        }
+        
+        // If still no date was parsed, use current date as fallback
+        if (!dueDate) {
+          dueDate = new Date().toISOString();
+          console.log('parseDate: Using current date as fallback:', dueDate);
+        }
+        
+        // Debug logging
+        console.log('Date parsing debug:', {
+          originalDateStr: dateStr,
+          parsedDate: dueDate,
+          message: message
+        });
 
         detectedTaskAssignment = {
           title: taskName,
@@ -249,10 +333,10 @@ export async function POST(request: Request) {
         }
 
         // Return success response
-        let responseMessage = `✅ I have added "${detectedTaskAssignment.title}" for all ${detectedTaskAssignment.assignToRole} for the date ${detectedTaskAssignment.dueDate || 'no specific date'}.`;
+        let responseMessage = `✅ I have added "${detectedTaskAssignment.title}" for all ${detectedTaskAssignment.assignToRole} for the date ${detectedTaskAssignment.dueDate ? new Date(detectedTaskAssignment.dueDate).toLocaleDateString() : 'no specific date'}.`;
         
         if (detectedTaskAssignment.assignToAllMembers) {
-          responseMessage = `✅ I have added "${detectedTaskAssignment.title}" for all group members for the date ${detectedTaskAssignment.dueDate || 'no specific date'}.`;
+          responseMessage = `✅ I have added "${detectedTaskAssignment.title}" for all group members for the date ${detectedTaskAssignment.dueDate ? new Date(detectedTaskAssignment.dueDate).toLocaleDateString() : 'no specific date'}.`;
         }
 
         return NextResponse.json({

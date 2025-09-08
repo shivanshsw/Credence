@@ -20,7 +20,7 @@ export function ChatMessage({
   requiresPermission?: string
 }) {
   const isUser = role === "user"
-  const initials = isUser ? "KR" : "AI"
+  const initials = isUser ? "KR" : "CR"
   
   return (
     <div className={cn("flex items-start gap-3", isUser ? "justify-end" : "justify-start")}>

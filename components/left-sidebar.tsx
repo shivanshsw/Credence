@@ -70,7 +70,7 @@ export default function LeftSidebar({
           <div className="relative h-2 w-2 rounded-full bg-teal-500">
             <span className="absolute inset-0 animate-pulse rounded-full bg-teal-500/40" />
           </div>
-          <span className="text-sm font-semibold tracking-wide">FINCORP MCP</span>
+          <span className="text-sm font-semibold tracking-wide">CREDENCE</span>
         </div>
       </div>
       <Separator className="bg-neutral-800" />
@@ -178,7 +178,7 @@ export default function LeftSidebar({
                 </button>
               </div>
 
-              <div className="max-h-72 overflow-y-auto">
+              <div className="max-h-72 overflow-y-auto scrollbar-hide">
                 {items.length === 0 ? (
                   <div className="px-3 py-8 text-center text-sm text-neutral-400">You're all caught up.</div>
                 ) : (

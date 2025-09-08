@@ -9,7 +9,7 @@ import { Suspense } from "react"
 import "./globals.css"
 
 export const metadata: Metadata = {
-    title: "FinCorp MCP",
+    title: "CREDENCE",
     description: "AI-powered productivity and security",
 }
 

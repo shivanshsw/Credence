@@ -1,7 +1,7 @@
 "use client"
 
 import { useEffect, useState } from "react"
-import { CreditCard, AlertCircle, Cloud, Clock } from "lucide-react"
+import { CreditCard, AlertCircle, Clock } from "lucide-react"
 import { Separator } from "@/components/ui/separator"
 import { ScrollArea } from "@/components/ui/scroll-area"
 import { Badge } from "@/components/ui/badge"
@@ -43,37 +43,77 @@ function DigitalClock() {
     )
 }
 
-function Weather() {
-    const [weather, setWeather] = useState<{ temp: number; city: string; desc: string } | null>(null)
+function InfoSection() {
+    const [counts, setCounts] = useState<{ groups: number; tasks: number; notes: number } | null>(null)
+    const [loading, setLoading] = useState(true)
 
     useEffect(() => {
-        const mockFetchWeather = () => {
-            setTimeout(() => {
-                setWeather({ temp: 28, city: "Delhi", desc: "Clear" })
-            }, 1500)
+        const fetchCounts = async () => {
+            try {
+                const [groupsRes, tasksRes, notesRes] = await Promise.all([
+                    fetch('/api/security/access', { credentials: 'include' }),
+                    fetch('/api/tasks', { credentials: 'include' }),
+                    fetch('/api/notes', { credentials: 'include' })
+                ])
+
+                const groups = groupsRes.ok ? await groupsRes.json() : { data: [] }
+                const tasks = tasksRes.ok ? await tasksRes.json() : []
+                const notes = notesRes.ok ? await notesRes.json() : []
+
+                setCounts({
+                    groups: Array.isArray(groups.data) ? groups.data.length : 0,
+                    tasks: Array.isArray(tasks) ? tasks.length : 0,
+                    notes: Array.isArray(notes) ? notes.length : 0
+                })
+            } catch (error) {
+                console.error('Error fetching counts:', error)
+                setCounts({ groups: 0, tasks: 0, notes: 0 })
+            } finally {
+                setLoading(false)
+            }
         }
-        mockFetchWeather()
+
+        fetchCounts()
     }, [])
 
-    if (!weather) {
+    if (loading) {
         return (
             <div className="rounded-md border border-neutral-800 bg-neutral-950 p-4 shadow">
                 <div className="flex items-center gap-3">
-                    <Cloud className="h-5 w-5 text-teal-400" />
-                    <div className="h-5 w-24 animate-pulse rounded-md bg-neutral-800" />
+                    <div className="h-5 w-5 rounded bg-teal-400/20" />
+                    <div className="h-4 w-20 animate-pulse rounded-md bg-neutral-800" />
                 </div>
-                <div className="mt-1 h-4 w-16 animate-pulse rounded-md bg-neutral-800" />
+                <div className="mt-2 space-y-1">
+                    <div className="h-3 w-16 animate-pulse rounded-md bg-neutral-800" />
+                    <div className="h-3 w-16 animate-pulse rounded-md bg-neutral-800" />
+                    <div className="h-3 w-16 animate-pulse rounded-md bg-neutral-800" />
+                </div>
             </div>
         )
     }
 
     return (
         <div className="rounded-md border border-neutral-800 bg-neutral-950 p-4 shadow">
-            <div className="flex items-center gap-3">
-                <Cloud className="h-5 w-5 text-teal-400" aria-hidden="true" />
-                <div className="text-sm font-medium">{weather.temp}°C, {weather.city}</div>
+            <div className="flex items-center gap-3 mb-3">
+                <div className="h-5 w-5 rounded bg-teal-400/20 flex items-center justify-center">
+                    <span className="text-xs text-teal-400 font-bold">i</span>
+                </div>
+                <div className="text-sm font-medium text-neutral-200">Overview</div>
             </div>
-            <div className="mt-1 text-xs text-neutral-400">{weather.desc}</div>
+            <div className="space-y-1 text-xs text-neutral-400">
+                <div className="flex justify-between">
+                    <span>Groups:</span>
+                    <span className="text-teal-400 font-medium">{counts?.groups || 0}</span>
+                </div>
+                <div className="flex justify-between">
+                    <span>Tasks:</span>
+                    <span className="text-blue-400 font-medium">{counts?.tasks || 0}</span>
+                </div>
+                <div className="flex justify-between">
+                    <span>Notes:</span>
+                    <span className="text-purple-400 font-medium">{counts?.notes || 0}</span>
+                </div>
+            </div>
         </div>
     )
 }
@@ -98,7 +138,7 @@ export default function RightRail({ onClearAll }: { onClearAll?: () => void }) {
             <div className="px-4 py-4">
                 <div className="grid grid-cols-1 gap-3">
                     <DigitalClock />
-                    <Weather />
+                    <InfoSection />
                 </div>
             </div>
 

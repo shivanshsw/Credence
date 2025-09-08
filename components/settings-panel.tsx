@@ -40,7 +40,7 @@ export default function SettingsPanel() {
         <div className="text-xs text-neutral-400">Profile & notifications</div>
       </header>
 
-      <div className="flex min-h-0 flex-1 flex-col gap-6 overflow-y-auto p-4">
+      <div className="flex min-h-0 flex-1 flex-col gap-6 overflow-y-auto scrollbar-hide p-4">
         {/* User Profile */}
         <Card className="bg-black/50 border-teal-900/40">
           <CardHeader>

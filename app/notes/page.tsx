@@ -9,9 +9,10 @@ import { Badge } from "@/components/ui/badge"
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
-import { Plus, Search, Share2, Edit, Trash2, User, Upload } from "lucide-react"
+import { Plus, Search, Share2, Edit, Trash2, User, Upload, FileText } from "lucide-react"
 import { useAuth } from "@/components/auth-context"
 import AppShell from "@/components/app-shell"
+import { LoadingSpinner, LoadingDots } from "@/components/ui/loading-spinner"
 
 interface Note {
   id: string
@@ -193,10 +194,18 @@ export default function NotesPage() {
     <AppShell>
       <div className="flex h-[calc(100vh-120px)] flex-col gap-4">
         <div className="flex items-center justify-between">
-          <h1 className="text-2xl font-bold">Notes</h1>
+          <div className="flex items-center gap-3">
+            <div className="p-2 rounded-lg bg-teal-500/10 border border-teal-500/20">
+              <FileText className="w-6 h-6 text-teal-400" />
+            </div>
+            <div>
+              <h1 className="text-2xl font-bold text-white">Notes</h1>
+              <p className="text-sm text-neutral-400">Capture and organize your thoughts</p>
+            </div>
+          </div>
           <Dialog open={isCreateOpen} onOpenChange={setIsCreateOpen}>
             <DialogTrigger asChild>
-              <Button className="bg-teal-600 hover:bg-teal-500">
+              <Button className="bg-gradient-to-r from-teal-500 to-teal-600 hover:from-teal-600 hover:to-teal-700 text-white shadow-lg hover:shadow-teal-500/25 transition-all duration-200">
                 <Plus className="h-4 w-4 mr-2" />
                 New Note
               </Button>
@@ -275,7 +284,10 @@ export default function NotesPage() {
           <TabsContent value={activeTab} className="flex-1">
             {loading ? (
               <div className="flex items-center justify-center h-32">
-                <div className="text-neutral-500">Loading notes...</div>
+                <div className="flex flex-col items-center space-y-2">
+                  <LoadingDots />
+                  <div className="text-neutral-500">Loading notes...</div>
+                </div>
               </div>
             ) : filteredNotes.length === 0 ? (
               <div className="flex items-center justify-center h-32">

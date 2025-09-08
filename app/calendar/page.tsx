@@ -1,12 +1,14 @@
 "use client"
 
+import React from "react"
 import AppShell from "@/components/app-shell"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { useEffect, useMemo, useState } from "react"
 import { Badge } from "@/components/ui/badge"
-import { CheckSquare, Clock } from "lucide-react"
+import { CheckSquare, Clock, Calendar } from "lucide-react"
 import { useAuth } from "@/components/auth-context"
+import { LoadingSpinner, LoadingDots } from "@/components/ui/loading-spinner"
 
 const days = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"]
 
@@ -82,14 +84,22 @@ export default function CalendarPage() {
   return (
     <AppShell>
       <div className="grid gap-6 lg:grid-cols-3">
-        <section className="lg:col-span-2 rounded-md border border-neutral-800 bg-neutral-950">
-          <header className="flex items-center justify-between border-b border-neutral-800 px-4 py-3">
-            <h1 className="text-sm font-semibold">
-              {(() => {
-                const now = new Date()
-                return now.toLocaleString(undefined, { month: 'long', year: 'numeric' })
-              })()}
-            </h1>
+        <section className="lg:col-span-2 rounded-lg border border-neutral-800 bg-gradient-to-br from-neutral-950 to-neutral-900 shadow-lg">
+          <header className="flex items-center justify-between border-b border-neutral-800 px-6 py-4">
+            <div className="flex items-center gap-3">
+              <div className="p-2 rounded-lg bg-teal-500/10 border border-teal-500/20">
+                <Calendar className="w-5 h-5 text-teal-400" />
+              </div>
+              <div>
+                <h1 className="text-lg font-semibold text-white">
+                  {(() => {
+                    const now = new Date()
+                    return now.toLocaleString(undefined, { month: 'long', year: 'numeric' })
+                  })()}
+                </h1>
+                <p className="text-sm text-neutral-400">Manage your schedule and tasks</p>
+              </div>
+            </div>
             <div className="inline-flex gap-2">
               {isAdmin && (
                 <Button
@@ -137,22 +147,88 @@ export default function CalendarPage() {
               const daysInMonth = new Date(year, month + 1, 0).getDate()
               const totalCells = Math.ceil((startWeekday + daysInMonth) / 7) * 7
 
-              const byDateKey = new Map<string, number>()
+              const byDateKey = new Map<string, { dueCount: number, createdCount: number, totalCount: number }>()
+              
               for (const t of tasks) {
-                const d = t.dueDate ? new Date(t.dueDate) : (t.createdAt ? new Date(t.createdAt) : null)
-                if (!d) continue
-                if (d.getMonth() !== month || d.getFullYear() !== year) continue
-                const key = d.toISOString().slice(0, 10)
-                byDateKey.set(key, (byDateKey.get(key) || 0) + 1)
+                // Process due date
+                if (t.dueDate) {
+                  const dueDate = new Date(t.dueDate)
+                  if (dueDate && !isNaN(dueDate.getTime()) && dueDate.getMonth() === month && dueDate.getFullYear() === year) {
+                    const dueYear = dueDate.getFullYear()
+                    const dueMonthStr = String(dueDate.getMonth() + 1).padStart(2, '0')
+                    const dueDayStr = String(dueDate.getDate()).padStart(2, '0')
+                    const dueKey = `${dueYear}-${dueMonthStr}-${dueDayStr}`
+                    
+                    const existing = byDateKey.get(dueKey) || { dueCount: 0, createdCount: 0, totalCount: 0 }
+                    existing.dueCount += 1
+                    existing.totalCount += 1
+                    byDateKey.set(dueKey, existing)
+                    
+                    console.log('Calendar: Due date processed', {
+                      taskTitle: t.title,
+                      dueDate: t.dueDate,
+                      dueKey: dueKey,
+                      month: month,
+                      year: year
+                    })
+                  }
+                }
+                
+                // Process creation date
+                if (t.createdAt) {
+                  const createdDate = new Date(t.createdAt)
+                  if (createdDate && !isNaN(createdDate.getTime()) && createdDate.getMonth() === month && createdDate.getFullYear() === year) {
+                    const createdYear = createdDate.getFullYear()
+                    const createdMonthStr = String(createdDate.getMonth() + 1).padStart(2, '0')
+                    const createdDayStr = String(createdDate.getDate()).padStart(2, '0')
+                    const createdKey = `${createdYear}-${createdMonthStr}-${createdDayStr}`
+                    
+                    const existing = byDateKey.get(createdKey) || { dueCount: 0, createdCount: 0, totalCount: 0 }
+                    existing.createdCount += 1
+                    existing.totalCount += 1
+                    byDateKey.set(createdKey, existing)
+                    
+                    console.log('Calendar: Created date processed', {
+                      taskTitle: t.title,
+                      createdAt: t.createdAt,
+                      createdKey: createdKey,
+                      month: month,
+                      year: year
+                    })
+                  }
+                }
               }
+              
+              console.log('Calendar: Final byDateKey map', Array.from(byDateKey.entries()))
 
-              const cells = [] as JSX.Element[]
+              const cells = [] as React.ReactElement[]
               for (let i = 0; i < totalCells; i++) {
                 const dayNum = i - startWeekday + 1
                 const inMonth = dayNum >= 1 && dayNum <= daysInMonth
                 const cellDate = inMonth ? new Date(year, month, dayNum) : null
-                const key = cellDate ? new Date(cellDate.getTime() - cellDate.getTimezoneOffset() * 60000).toISOString().slice(0,10) : ''
-                const hasTasks = key && byDateKey.has(key)
+                
+                // Create consistent date key for cell
+                let key = ''
+                if (cellDate) {
+                  const cellYear = cellDate.getFullYear()
+                  const cellMonthStr = String(cellDate.getMonth() + 1).padStart(2, '0')
+                  const cellDayStr = String(cellDate.getDate()).padStart(2, '0')
+                  key = `${cellYear}-${cellMonthStr}-${cellDayStr}`
+                }
+                
+                const dateInfo = key ? byDateKey.get(key) : null
+                const hasTasks = dateInfo && dateInfo.totalCount > 0
+                const hasBothDueAndCreated = dateInfo && dateInfo.dueCount > 0 && dateInfo.createdCount > 0
+                
+                if (hasTasks) {
+                  console.log('Calendar: Cell has tasks', {
+                    dayNum,
+                    key,
+                    dateInfo,
+                    hasBothDueAndCreated
+                  })
+                }
+                
                 cells.push(
                   <div
                     key={i}
@@ -162,7 +238,20 @@ export default function CalendarPage() {
                   >
                     <span className="inline-block rounded-sm bg-neutral-900 px-1">{inMonth ? dayNum : ''}</span>
                     {hasTasks && (
-                      <div className="mt-1 h-1.5 w-1.5 rounded-full bg-green-500/80 shadow-[0_0_6px_theme(colors.green.500/60)]" />
+                      <div className="mt-1 flex justify-center gap-0.5">
+                        {dateInfo.dueCount > 0 && (
+                          <div 
+                            className={`rounded-full bg-green-500/80 shadow-[0_0_6px_theme(colors.green.500/60)] ${hasBothDueAndCreated ? 'h-2 w-2' : 'h-1.5 w-1.5'}`}
+                            title={`${dateInfo.dueCount} task(s) due on this date`}
+                          />
+                        )}
+                        {dateInfo.createdCount > 0 && (
+                          <div 
+                            className={`rounded-full bg-blue-500/80 shadow-[0_0_6px_theme(colors.blue.500/60)] ${hasBothDueAndCreated ? 'h-2 w-2' : 'h-1.5 w-1.5'}`}
+                            title={`${dateInfo.createdCount} task(s) created on this date`}
+                          />
+                        )}
+                      </div>
                     )}
                   </div>
                 )
@@ -172,12 +261,20 @@ export default function CalendarPage() {
           </div>
         </section>
 
-        <section className="rounded-md border border-neutral-800 bg-neutral-950">
-          <header className="border-b border-neutral-800 px-4 py-3">
+        <section className="rounded-lg border border-neutral-800 bg-gradient-to-br from-neutral-950 to-neutral-900 shadow-lg">
+          <header className="border-b border-neutral-800 px-6 py-4">
             <div className="flex items-center justify-between">
-              <h2 className="text-sm font-semibold">
-                {selectedDate ? `Tasks on ${selectedDate.toLocaleDateString()}` : 'Upcoming Events & Tasks'}
-              </h2>
+              <div className="flex items-center gap-3">
+                <div className="p-2 rounded-lg bg-blue-500/10 border border-blue-500/20">
+                  <CheckSquare className="w-5 h-5 text-blue-400" />
+                </div>
+                <div>
+                  <h2 className="text-lg font-semibold text-white">
+                    {selectedDate ? `Tasks on ${selectedDate.toLocaleDateString()}` : 'Upcoming Events & Tasks'}
+                  </h2>
+                  <p className="text-sm text-neutral-400">Track your progress and deadlines</p>
+                </div>
+              </div>
               {selectedDate && (
                 <Button variant="outline" size="sm" onClick={() => setSelectedDate(null)} className="border-neutral-800">
                   ✕
@@ -186,11 +283,48 @@ export default function CalendarPage() {
             </div>
           </header>
           <div className="p-4 space-y-3">
-            {loading && <p className="text-xs text-neutral-500">Loading...</p>}
+            {loading && (
+              <div className="flex items-center justify-center py-8">
+                <div className="flex flex-col items-center space-y-2">
+                  <LoadingDots />
+                  <p className="text-xs text-neutral-500">Loading tasks...</p>
+                </div>
+              </div>
+            )}
             {!loading && (selectedDate ? ordered.filter(t => {
-              const d = t.dueDate ? new Date(t.dueDate) : (t.createdAt ? new Date(t.createdAt) : null)
-              if (!d) return false
-              return d.toDateString() === selectedDate.toDateString()
+              const selectedYear = selectedDate.getFullYear()
+              const selectedMonth = selectedDate.getMonth()
+              const selectedDay = selectedDate.getDate()
+              
+              // Check if task is due on selected date
+              if (t.dueDate) {
+                const dueDate = new Date(t.dueDate)
+                if (dueDate && !isNaN(dueDate.getTime())) {
+                  const dueYear = dueDate.getFullYear()
+                  const dueMonth = dueDate.getMonth()
+                  const dueDay = dueDate.getDate()
+                  
+                  if (dueYear === selectedYear && dueMonth === selectedMonth && dueDay === selectedDay) {
+                    return true
+                  }
+                }
+              }
+              
+              // Check if task was created on selected date
+              if (t.createdAt) {
+                const createdDate = new Date(t.createdAt)
+                if (createdDate && !isNaN(createdDate.getTime())) {
+                  const createdYear = createdDate.getFullYear()
+                  const createdMonth = createdDate.getMonth()
+                  const createdDay = createdDate.getDate()
+                  
+                  if (createdYear === selectedYear && createdMonth === selectedMonth && createdDay === selectedDay) {
+                    return true
+                  }
+                }
+              }
+              
+              return false
             }) : ordered).map((t) => (
               <Card key={t.id} className="border-neutral-800 bg-black transition data-[done=true]:opacity-50" data-done={t.status === 'completed'}>
                 <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
@@ -205,7 +339,12 @@ export default function CalendarPage() {
                   )}
                 </CardHeader>
                 <CardContent className="flex items-center justify-between text-xs text-neutral-400">
-                  <span>{t.dueDate ? new Date(t.dueDate).toLocaleString() : new Date(t.createdAt).toLocaleString()}</span>
+                  <div className="flex flex-col gap-1">
+                    {t.dueDate && (
+                      <span className="text-green-400 font-semibold">📅 Due: {new Date(t.dueDate).toLocaleDateString()}</span>
+                    )}
+                    <span className="text-blue-400">📝 Created: {new Date(t.createdAt).toLocaleDateString()}</span>
+                  </div>
                   <Button
                     size="sm"
                     variant="outline"

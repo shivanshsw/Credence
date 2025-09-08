@@ -8,9 +8,10 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
-import { Plus, Search, Calendar } from "lucide-react"
+import { Plus, Search, Calendar, CheckSquare } from "lucide-react"
 import { useAuth } from "@/components/auth-context"
 import AppShell from "@/components/app-shell"
+import { LoadingSpinner, LoadingDots } from "@/components/ui/loading-spinner"
 
 interface Task {
   id: string
@@ -184,11 +185,19 @@ export default function TasksPage() {
     <AppShell>
       <div className="flex h-[calc(100vh-120px)] flex-col gap-4">
         <div className="flex items-center justify-between">
-          <h1 className="text-2xl font-bold">Tasks</h1>
+          <div className="flex items-center gap-3">
+            <div className="p-2 rounded-lg bg-blue-500/10 border border-blue-500/20">
+              <CheckSquare className="w-6 h-6 text-blue-400" />
+            </div>
+            <div>
+              <h1 className="text-2xl font-bold text-white">Tasks</h1>
+              <p className="text-sm text-neutral-400">Stay organized and productive</p>
+            </div>
+          </div>
           <div className="flex items-center gap-2">
             <Dialog open={isCreateOpen} onOpenChange={(open) => { setIsCreateOpen(open); if (open) { setCreateGroupId(selectedGroup?.id || availableGroups[0]?.id || null) } }}>
               <DialogTrigger asChild>
-                <Button className="bg-teal-600 hover:bg-teal-500">
+                <Button className="bg-gradient-to-r from-teal-500 to-teal-600 hover:from-teal-600 hover:to-teal-700 text-white shadow-lg hover:shadow-teal-500/25 transition-all duration-200">
                   <Plus className="h-4 w-4 mr-2" />
                   New Task
                 </Button>
@@ -271,7 +280,10 @@ export default function TasksPage() {
 
         {loading ? (
           <div className="flex items-center justify-center h-32">
-            <div className="text-neutral-500">Loading tasks...</div>
+            <div className="flex flex-col items-center space-y-2">
+              <LoadingDots />
+              <div className="text-neutral-500">Loading tasks...</div>
+            </div>
           </div>
         ) : filteredTasks.length === 0 ? (
           <div className="flex items-center justify-center h-32">
@@ -281,57 +293,59 @@ export default function TasksPage() {
             </div>
           </div>
         ) : (
-          <div className="grid gap-4">
-            {filteredTasks.map((task) => (
-              <Card key={task.id} className="border-neutral-800">
-                <CardHeader className="pb-2">
-                  <div className="flex items-start justify-between">
-                    <CardTitle className="text-lg">{task.title}</CardTitle>
-                    <div className="flex gap-2">
-                      
-                      <Button
-                        size="sm"
-                        variant="ghost"
-                        onClick={() => setEditingTask(task)}
-                      >
-                        Edit
-                      </Button>
-                      <Button
-                        size="sm"
-                        variant="ghost"
-                        onClick={() => deleteTask(task.id)}
-                      >
-                        Delete
-                      </Button>
+          <div className="flex-1 overflow-y-auto scrollbar-hide">
+            <div className="grid gap-4">
+              {filteredTasks.map((task) => (
+                <Card key={task.id} className="border-neutral-800">
+                  <CardHeader className="pb-2">
+                    <div className="flex items-start justify-between">
+                      <CardTitle className="text-lg">{task.title}</CardTitle>
+                      <div className="flex gap-2">
+                        
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          onClick={() => setEditingTask(task)}
+                        >
+                          Edit
+                        </Button>
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          onClick={() => deleteTask(task.id)}
+                        >
+                          Delete
+                        </Button>
+                      </div>
                     </div>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <Badge className={getPriorityColor(task.priority)}>
-                      {task.priority}
-                    </Badge>
-                    <Badge className={getStatusColor(task.status)}>
-                      {task.status}
-                    </Badge>
-                    {task.dueDate && (
-                      <Badge variant="outline" className="flex items-center gap-1">
-                        <Calendar className="h-3 w-3" />
-                        {new Date(task.dueDate).toLocaleDateString()}
+                    <div className="flex items-center gap-2">
+                      <Badge className={getPriorityColor(task.priority)}>
+                        {task.priority}
                       </Badge>
-                    )}
-                  </div>
-                </CardHeader>
-                <CardContent>
-                  <p className="text-sm text-neutral-300 mb-2">{task.description}</p>
-                  <div className="flex items-center justify-between text-xs text-neutral-400">
-                    <div className="flex items-center gap-4">
-                      <span>Assigned to: {task.assignedToUserName}</span>
-                      <span>By: {task.assignedByUserName}</span>
+                      <Badge className={getStatusColor(task.status)}>
+                        {task.status}
+                      </Badge>
+                      {task.dueDate && (
+                        <Badge variant="outline" className="flex items-center gap-1">
+                          <Calendar className="h-3 w-3" />
+                          {new Date(task.dueDate).toLocaleDateString()}
+                        </Badge>
+                      )}
                     </div>
-                    <span>{new Date(task.createdAt).toLocaleDateString()}</span>
-                  </div>
-                </CardContent>
-              </Card>
-            ))}
+                  </CardHeader>
+                  <CardContent>
+                    <p className="text-sm text-neutral-300 mb-2">{task.description}</p>
+                    <div className="flex items-center justify-between text-xs text-neutral-400">
+                      <div className="flex items-center gap-4">
+                        <span>Assigned to: {task.assignedToUserName}</span>
+                        <span>By: {task.assignedByUserName}</span>
+                      </div>
+                      <span>{new Date(task.createdAt).toLocaleDateString()}</span>
+                    </div>
+                  </CardContent>
+                </Card>
+              ))}
+            </div>
           </div>
         )}
 

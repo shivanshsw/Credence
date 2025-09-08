@@ -41,7 +41,7 @@ export default function SecurityPanel() {
       </header>
 
       <div className="flex min-h-0 flex-1 flex-col gap-3 p-3">
-        <div className="grid flex-1 grid-cols-1 gap-3 overflow-y-auto rounded-md border border-neutral-900 bg-black p-3 lg:grid-cols-2">
+        <div className="grid flex-1 grid-cols-1 gap-3 overflow-y-auto scrollbar-hide rounded-md border border-neutral-900 bg-black p-3 lg:grid-cols-2">
           {/* Access & Permissions */}
           <div id="pending-requests" className="rounded-lg border border-white/10 bg-neutral-950 p-4">
             <h2 className="mb-2 text-sm font-medium text-neutral-200">Access & Permissions</h2>
@@ -62,15 +62,20 @@ export default function SecurityPanel() {
           {/* Audit Log */}
           <div id="audit-log" className="rounded-lg border border-white/10 bg-neutral-950 p-4">
             <h2 className="mb-2 text-sm font-medium text-neutral-200">Audit Log</h2>
-            <div className="max-h-64 overflow-y-auto rounded-md border border-white/10">
+            <div className="max-h-64 overflow-y-auto scrollbar-hide rounded-md border border-white/10">
               <ul className="divide-y divide-white/10 text-sm">
+                {/* Default logged in entry */}
+                <li className="px-3 py-2 text-neutral-300 bg-teal-500/10 border-l-2 border-teal-500">
+                  <div className="font-medium">User signed in</div>
+                  <div className="text-xs text-neutral-400">Current User · {new Date().toLocaleString()}</div>
+                </li>
                 {audit.map((item) => (
                   <li key={item.id} className="px-3 py-2 text-neutral-400">
                     {item.event_type} · {new Date(item.created_at).toLocaleString()}
                   </li>
                 ))}
                 {audit.length === 0 && (
-                  <li className="px-3 py-2 text-neutral-500 text-xs">No logs.</li>
+                  <li className="px-3 py-2 text-neutral-500 text-xs">No additional logs.</li>
                 )}
               </ul>
             </div>

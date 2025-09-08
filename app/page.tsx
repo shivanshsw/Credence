@@ -8,7 +8,7 @@ import SecurityPanel from "@/components/security-panel"
 import SettingsPanel from "@/components/settings-panel"
 import GroupGate from "@/components/groups/group-gate"
 import {ChatView} from "@/components/chat/chat-view"
-import { MigrationButton } from "@/components/migration-button"
+import { LoadingSpinner } from "@/components/ui/loading-spinner"
 
 export default function Page() {
   // Get the state from our central 'brain', the auth context
@@ -27,7 +27,10 @@ export default function Page() {
     return (
         <AppShell>
           <div className="flex h-full items-center justify-center">
-            <p className="text-neutral-500">Loading...</p>
+            <div className="flex flex-col items-center space-y-4">
+              <LoadingSpinner size="lg" />
+              <p className="text-neutral-500">Loading...</p>
+            </div>
           </div>
         </AppShell>
     );
@@ -53,7 +56,7 @@ export default function Page() {
               <div className="mx-auto h-12 w-12 rounded-full bg-teal-500/20 flex items-center justify-center mb-4">
                 <span className="text-2xl">🚀</span>
               </div>
-              <h1 className="text-2xl font-bold text-white mb-2">Welcome to FINCORP MCP</h1>
+              <h1 className="text-2xl font-bold text-white mb-2">Welcome to CREDENCE</h1>
               <p className="text-sm text-neutral-400">Your intelligent financial assistant</p>
             </div>
             
@@ -66,9 +69,6 @@ export default function Page() {
                 Sign In / Sign Up
               </button>
               
-              <div className="text-xs text-neutral-500 pt-2">
-                <MigrationButton />
-              </div>
             </div>
           </div>
         </div>

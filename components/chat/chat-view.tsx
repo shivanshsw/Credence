@@ -140,8 +140,8 @@ export function ChatView() {
             },
             {
                 kind: "tool",
-                title: "Invoice Summary",
-                body: "Last 30 days: 42 invoices · $184,220 total · 3 overdue.",
+                title: "Welcome to CREDENCE",
+                body: "Hey! I'm CREDENCE, your AI agent who can help you with task management, document analysis, calendar scheduling, note-taking, and much more. I'm here to streamline your workflow and boost your team's productivity. What would you like to work on today?",
             },
         ]);
     }, [selectedGroup?.id]); // run when group changes
@@ -303,7 +303,7 @@ export function ChatView() {
                     </div>
                 )}
                 
-                <div ref={listRef} className="flex-1 min-h-0 overflow-y-auto rounded-md border border-neutral-900 bg-black p-3">
+                <div ref={listRef} className="flex-1 min-h-0 overflow-y-auto scrollbar-hide rounded-md border border-neutral-900 bg-black p-3">
                     <div className="space-y-3">
                         {messages.map((m, i) => {
                             if (m.kind === "msg") return (

@@ -200,7 +200,7 @@ export function MembersManagement({ groupId, isAdmin }: MembersManagementProps) 
               <p className="text-neutral-400">Loading members...</p>
             </div>
           ) : (
-            <div className="space-y-2 max-h-96 overflow-y-auto">
+            <div className="space-y-2 max-h-96 overflow-y-auto scrollbar-hide">
               {members.length === 0 ? (
                 <div className="text-center py-4">
                   <p className="text-neutral-400">No members found</p>

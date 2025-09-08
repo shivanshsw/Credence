@@ -5,6 +5,7 @@ import React, { useEffect, useRef, useState } from "react";
 import LeftSidebar from "@/components/left-sidebar";
 import RightRail from "@/components/right-rail";
 import Topbar from "@/components/topbar";
+import { InfoButton } from "@/components/info-button";
 import { cn } from "@/lib/utils";
 import { useAuth } from "@/components/auth-context";
 
@@ -90,7 +91,7 @@ function ShellInner({ children }: { children: React.ReactNode }) {
                             Close
                         </button>
                     </div>
-                    <div className="h-[calc(100%-48px)] overflow-y-auto">
+                    <div className="h-[calc(100%-48px)] overflow-y-auto scrollbar-hide">
                         <LeftSidebar
                             unread={unread}
                             onLogout={async () => {
@@ -118,6 +119,9 @@ function ShellInner({ children }: { children: React.ReactNode }) {
                     </div>
                 </div>
             </div>
+            
+            {/* Info Button */}
+            <InfoButton />
         </div>
     );
 }
