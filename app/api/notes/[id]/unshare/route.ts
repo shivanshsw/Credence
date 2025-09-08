@@ -60,12 +60,6 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
   }
 }
 
-import { NextResponse } from 'next/server';
-import { session } from '@descope/nextjs-sdk/server';
-import { neon } from '@neondatabase/serverless';
-
-const sql = neon(process.env.DATABASE_URL!);
-
 export async function PATCH(request: Request, { params }: { params: { id: string } }) {
   const sessionInfo = await session();
   if (!sessionInfo?.token?.sub) {
