@@ -1,6 +1,7 @@
 "use client"
 
 import type React from "react"
+import { useState } from "react"
 
 import { Avatar, AvatarFallback } from "@/components/ui/avatar"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
@@ -21,6 +22,8 @@ export function ChatMessage({
 }) {
   const isUser = role === "user"
   const initials = isUser ? "KR" : "CR"
+  const [askingPermit, setAskingPermit] = useState(false)
+  const [permitGranted, setPermitGranted] = useState(false)
   
   return (
     <div className={cn("flex items-start gap-3", isUser ? "justify-end" : "justify-start")}>
@@ -59,17 +62,39 @@ export function ChatMessage({
           children
         )}
         {requiresPermission === 'permission_denied' && !isUser && (
-          <div className="mt-3">
-            <button
-              className="inline-flex items-center rounded-md bg-teal-600 px-3 py-1.5 text-xs font-medium text-black hover:bg-teal-500"
-              onClick={() => {
-                // Placeholder action: would notify group admin
-                console.log('Request Access clicked');
-                try { alert('Access request sent to group admin (placeholder).'); } catch {}
-              }}
-            >
-              Request Access
-            </button>
+          <div className="mt-3 space-y-2">
+            <p className="text-sm font-medium text-red-400">Access denied</p>
+            <p className="text-[13px] text-red-300/90">You need files:read and a manager/admin approval. Ask your manager to grant the permit.</p>
+            <div>
+              <button
+                className={cn(
+                  "inline-flex items-center gap-2 rounded-md px-3 py-1.5 text-xs font-medium",
+                  permitGranted
+                    ? "border border-teal-500/40 bg-teal-500/10 text-teal-200"
+                    : "bg-teal-600 text-black hover:bg-teal-500"
+                )}
+                onClick={async () => {
+                  if (askingPermit || permitGranted) return
+                  setAskingPermit(true)
+                  await new Promise(r => setTimeout(r, 1400))
+                  setAskingPermit(false)
+                  setPermitGranted(true)
+                }}
+                aria-busy={askingPermit}
+              >
+                {askingPermit && (
+                  <span className="h-3 w-3 animate-spin rounded-full border-2 border-black/40 border-t-black" />
+                )}
+                {permitGranted ? (
+                  <span className="inline-flex items-center gap-1 text-teal-300">
+                    <span className="text-base leading-none">✓</span>
+                    Permit requested
+                  </span>
+                ) : (
+                  <span>Ask permit</span>
+                )}
+              </button>
+            </div>
           </div>
         )}
       </div>

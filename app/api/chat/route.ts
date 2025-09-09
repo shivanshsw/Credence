@@ -41,12 +41,37 @@ export async function POST(request: Request) {
     // Get group-specific permissions
     const groupPermissions = await rbacService.getUserGroupPermissions(userId, groupId);
     
-    // Combine permissions
+    // Determine effective role: prefer group role (e.g., creator/admin) over global user role
+    let effectiveRole = userPermissions.role;
+    try {
+      const membership = await sql`
+        SELECT role FROM group_members WHERE group_id = ${groupId} AND user_id = ${userId} LIMIT 1
+      ` as { role: string }[];
+      if (membership && membership.length > 0 && membership[0].role) {
+        effectiveRole = membership[0].role;
+      }
+    } catch {}
+
+    // Combine permissions (with effective role)
     const combinedPermissions = {
       ...userPermissions,
+      role: effectiveRole,
       groupPermissions: groupPermissions.groupPermissions,
       customPermissionText: groupPermissions.customPermissionText
     };
+
+    // Helper: strict file access control → only admins/managers WITH files:read
+    const canAccessFiles = (() => {
+      const role = effectiveRole?.toLowerCase?.() || '';
+      const basePerms = combinedPermissions.permissions || [];
+      const grpPerms = combinedPermissions.groupPermissions || [];
+      const hasRead = basePerms.includes('files:read') || grpPerms.includes('files:read');
+      // Admin override: admins can always access
+      if (role === 'admin') return true;
+      // Managers require files:read
+      if (role === 'manager') return hasRead;
+      return false;
+    })();
 
     // Get group name
     const groups = await sql`
@@ -384,16 +409,20 @@ export async function POST(request: Request) {
       tasksForContext = [];
     }
 
-    // Fetch uploaded files metadata for context (titles)
+    // Fetch uploaded files metadata for context (titles) – gated by permissions
     let filesForContext: any[] = [];
     try {
-      filesForContext = await sql`
-        SELECT title as file_name, mime_type, uploaded_at as created_at, is_inline_content
-        FROM uploaded_files
-        WHERE group_id = ${groupId}
-        ORDER BY uploaded_at DESC
-        LIMIT 10
-      `;
+      if (canAccessFiles) {
+        filesForContext = await sql`
+          SELECT title as file_name, mime_type, uploaded_at as created_at, is_inline_content
+          FROM uploaded_files
+          WHERE group_id = ${groupId}
+          ORDER BY uploaded_at DESC
+          LIMIT 10
+        `;
+      } else {
+        filesForContext = [];
+      }
     } catch (e) {
       filesForContext = [];
     }
@@ -564,6 +593,13 @@ export async function POST(request: Request) {
     let augmentedContext = { ...context } as ChatContext;
     const fileCmdMatch = /file:\s*("[^"]+"|\S+)/i.exec(message);
     if (fileCmdMatch) {
+      if (!canAccessFiles) {
+        return NextResponse.json({
+          response: 'You need files:read and role admin/manager to access group files.',
+          isCommand: false,
+          requiresPermission: 'permission_denied'
+        });
+      }
       const requestedPart = fileCmdMatch[1] || '';
       const requested = requestedPart
         .trim()
@@ -718,6 +754,13 @@ export async function POST(request: Request) {
       const withExt = /\b([\w\- .]{1,160}\.(?:txt|pdf|docx|xlsx|xls|csv|json|md))\b/i.exec(message);
       const candidateName = (quoted?.[1] || withExt?.[1] || '').trim();
       if (candidateName) {
+        if (!canAccessFiles) {
+          return NextResponse.json({
+            response: 'You need files:read and role admin/manager to access group files.',
+            isCommand: false,
+            requiresPermission: 'permission_denied'
+          });
+        }
         console.log('[chat] autodetect: candidate name', { candidateName });
         // Inline content short-circuit
         try {
@@ -858,6 +901,13 @@ export async function POST(request: Request) {
     const listIntent = /(what\s+(are\s+)?the\s+files|which\s+files|list\s+files|show\s+files|all\s+files|files\?|files\s+available|files\s+can\s+i\s+access|what\s+are\s+the\s+files\s+i\s+can\s+access)/i.test(message);
     if (listIntent) {
       try {
+        if (!canAccessFiles) {
+          return NextResponse.json({
+            response: 'You need files:read and role admin/manager to list group files.',
+            isCommand: false,
+            requiresPermission: 'permission_denied'
+          });
+        }
         let rows = await sql`
           SELECT title, is_inline_content, mime_type, uploaded_at
           FROM uploaded_files
