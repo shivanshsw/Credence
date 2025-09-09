@@ -57,7 +57,7 @@ export default function Page() {
                 <span className="text-2xl">🚀</span>
               </div>
               <h1 className="text-2xl font-bold text-white mb-2">Welcome to CREDENCE</h1>
-              <p className="text-sm text-neutral-400">Your intelligent financial assistant</p>
+              <p className="text-sm text-neutral-400">Secure, collaborative, intelligent</p>
             </div>
             
             <div className="space-y-4">
