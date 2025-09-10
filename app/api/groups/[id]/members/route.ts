@@ -149,16 +149,16 @@ export async function PATCH(
     `;
     console.log(`🔄 User role update result:`, userUpdateResult);
     
-    // Debug logging to verify the update
+    
     console.log(`🔄 Role update - User ID: ${member_user_id}, New Role: ${new_role}, Group ID: ${groupId}`);
     
-    // Verify the update worked
+    
     const verifyUser = await sql`
       SELECT role FROM users WHERE id = ${member_user_id}
     `;
     console.log(`✅ Verification - User ${member_user_id} role is now: ${verifyUser[0]?.role}`);
     
-    // Also verify the group role update
+    
     const verifyGroupRole = await sql`
       SELECT role FROM group_members 
       WHERE group_id = ${groupId} AND user_id = ${member_user_id}

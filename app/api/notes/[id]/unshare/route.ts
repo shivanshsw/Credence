@@ -4,7 +4,7 @@ import { neon } from '@neondatabase/serverless';
 
 const sql = neon(process.env.DATABASE_URL!);
 
-// POST: Unshare a note with one or more users; if none remain, make private again
+
 export async function POST(request: Request, context: { params: Promise<{ id: string }> }) {
   const sessionInfo = await session();
   if (!sessionInfo?.token?.sub) {
@@ -18,12 +18,12 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
       ? body.recipients
       : (body?.recipient ? [body.recipient] : []);
 
-    // Resolve caller id
+    // 
     const users = await sql`SELECT id FROM users WHERE descope_user_id = ${sessionInfo.token.sub}`;
     if (users.length === 0) return NextResponse.json({ error: 'User not found' }, { status: 404 });
     const userId = users[0].id as string;
 
-    // Ensure caller is author
+    // 
     const note = await sql`SELECT author_id FROM notes WHERE id = ${id}`;
     if (!note.length) return NextResponse.json({ error: 'Note not found' }, { status: 404 });
     if (note[0].author_id !== userId) return NextResponse.json({ error: 'Only author can manage sharing' }, { status: 403 });

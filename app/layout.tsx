@@ -23,7 +23,7 @@ export default function RootLayout({
         <DescopeProvider projectId="P31g20L0fHuSApft5KX1X7XcYOrz">
             <html lang="en" className="dark">
             <body className={`font-sans ${GeistSans.variable} ${GeistMono.variable}`}>
-            {/* 2. Your custom provider is on the inside, wrapping the pages */}
+            {}
             <AuthProvider>
                 <Suspense fallback={<div>Loading...</div>}>{children}</Suspense>
             </AuthProvider>

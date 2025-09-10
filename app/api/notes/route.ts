@@ -30,7 +30,7 @@ export async function GET(request: Request) {
     
     const userId = users[0].id;
 
-    // Allow users to view their own and shared notes without special perms
+    
 
     let notes = [];
     if (type === 'all') {
@@ -53,7 +53,7 @@ export async function GET(request: Request) {
   }
 }
 
-// POST: Create a new note
+
 export async function POST(request: Request) {
   const sessionInfo = await session();
   
@@ -100,7 +100,7 @@ export async function POST(request: Request) {
     
     const userId = users[0].id;
 
-    // Allow users to create their own notes
+    
 
     let note = await notesService.createNote({
       title,
@@ -109,7 +109,7 @@ export async function POST(request: Request) {
       authorId: userId
     });
 
-    // Optional: auto-join by invite code (share with current user)
+    
     if (inviteCode) {
       try {
         const noteIdFromCode = notesService.decodeInviteCodeToUuid(inviteCode);

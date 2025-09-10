@@ -460,7 +460,7 @@ export default function GroupGate() {
                 <div className="rounded-lg border border-yellow-500/30 bg-yellow-500/10 p-4">
                   <p className="text-sm text-yellow-400 mb-2">Group created successfully!</p>
                   <p className="text-xs text-neutral-500">
-                    Note: Invite code feature requires database migration. Please run the migration to enable invite codes.
+                    
                   </p>
                 </div>
               )}

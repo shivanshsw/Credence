@@ -3,7 +3,7 @@ import { GoogleGenAI } from "@google/genai";
 
 const GEMINI_API_KEY = process.env.GEMINI_API_KEY || "apikey";
 
-// Client will pick from GEMINI_API_KEY automatically if set
+
 const ai = new GoogleGenAI({ apiKey: GEMINI_API_KEY });
 
 console.log("Gemini API Key loaded?", !!GEMINI_API_KEY);
@@ -73,7 +73,7 @@ export class GeminiService {
 
       let result;
       if (context.ragFileUris && context.ragFileUris.length > 0) {
-        // Send as structured content with file parts so Gemini can read them directly
+        
         const parts: any[] = [{ text: combinedPrompt }];
         for (const f of context.ragFileUris.slice(0, 5)) {
           parts.push({ fileData: { fileUri: f.uri, mimeType: f.mimeType } });
@@ -126,7 +126,7 @@ USER CONTEXT:
       prompt += `\n- Group-Specific Permissions: ${groupPermissionsList}`;
     }
 
-    // Add custom permission text with HIGH PRIORITY if it exists
+    
     if (context.userPermissions.customPermissionText) {
       prompt += `\n\n🚨 HIGH PRIORITY - CUSTOM GROUP PERMISSIONS (OVERRIDES ALL OTHER RESTRICTIONS):
 ${context.userPermissions.customPermissionText}

@@ -4,8 +4,7 @@ import { neon } from '@neondatabase/serverless';
 
 const sql = neon(process.env.DATABASE_URL!);
 
-// POST: Copy a note to a new private note owned by current user
-// Input: { note_id }
+
 export async function POST(request: Request) {
   const sessionInfo = await session();
   if (!sessionInfo?.token?.sub) {
@@ -20,7 +19,7 @@ export async function POST(request: Request) {
     if (!users.length) return NextResponse.json({ error: 'User not found' }, { status: 404 });
     const userId = users[0].id as string;
 
-    // Fetch source if accessible to user (owner or shared)
+    
     const src = await sql`
       SELECT n.title, n.content
       FROM notes n
@@ -67,4 +66,4 @@ export async function POST(request: Request) {
   }
 }
 
-// (duplicate removed)
+

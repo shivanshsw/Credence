@@ -16,7 +16,7 @@ export interface Task {
   dueDate: string | null;
   priority: 'low' | 'medium' | 'high';
   status: 'pending' | 'in_progress' | 'completed' | 'cancelled';
-  // derived from status or explicit
+  
   createdAt: string;
   updatedAt: string;
 }
@@ -112,7 +112,7 @@ export class TasksService {
         createdAt: task.created_at,
         updatedAt: task.updated_at
       }));
-      // Incomplete first, then completed/cancelled, and within groups by due/created desc
+      
       return mapped.sort((a: any, b: any) => {
         const ar = (a.status === 'completed' || a.status === 'cancelled') ? 1 : 0
         const br = (b.status === 'completed' || b.status === 'cancelled') ? 1 : 0

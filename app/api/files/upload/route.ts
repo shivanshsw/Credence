@@ -18,7 +18,7 @@ export async function POST(request: Request) {
     const description = (form.get('description') as string) || '';
     const groupId = (form.get('group_id') as string) || '';
 
-    // Validate: require title and group, and either a file or non-empty description (inline content)
+    
     if (!title || !groupId) {
       return NextResponse.json({ error: 'title and group_id are required' }, { status: 400 });
     }
@@ -26,7 +26,7 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: 'Provide a file or non-empty description for inline content' }, { status: 400 });
     }
 
-    // Resolve uploader user id from descope id
+    
     const users = await sql`
       SELECT id FROM users WHERE descope_user_id = ${sessionInfo.token.sub}
     `;
@@ -35,7 +35,7 @@ export async function POST(request: Request) {
     }
     const uploaderId = users[0].id as string;
 
-    // Verify membership in group
+    
     const membership = await sql`
       SELECT 1 FROM group_members WHERE group_id = ${groupId} AND user_id = ${uploaderId}
     `;
@@ -43,21 +43,20 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: 'Forbidden: not a member of this group' }, { status: 403 });
     }
 
-    // Branch: File-backed upload vs inline content
+    
     if (file instanceof Blob) {
       const originalName = (file as any).name || 'upload';
       const contentType = (file as Blob).type || 'application/octet-stream';
       const destinationPath = `group-${groupId}/${Date.now()}-${originalName.replace(/[^a-zA-Z0-9._-]/g, '_')}`;
 
-      // Upload the File/Blob directly to Supabase storage, auto-create bucket on first use
+
       let { error: upErr } = await supabaseAdmin.storage.from(GROUP_FILES_BUCKET).upload(destinationPath, file as Blob, {
         contentType,
         upsert: false,
       });
       if (upErr) {
         try {
-          // attempt to create bucket then retry once
-          // @ts-ignore - createBucket exists on server-side client
+        
           await supabaseAdmin.storage.createBucket(GROUP_FILES_BUCKET, { public: false }).catch(() => {});
           const retry = await supabaseAdmin.storage.from(GROUP_FILES_BUCKET).upload(destinationPath, file as Blob, {
             contentType,
@@ -70,8 +69,6 @@ export async function POST(request: Request) {
         return NextResponse.json({ error: `Upload failed: ${upErr.message || 'unknown error'}`, detail: upErr.message }, { status: 500 });
       }
 
-      // Store the storage path in both columns for consistency
-      // We can generate signed URLs on-demand when needed for frontend display
       let inserted;
       try {
         inserted = await sql`
@@ -88,7 +85,6 @@ export async function POST(request: Request) {
         `;
       }
 
-      // Generate signed URL for the response (frontend display)
       let publicUrl = '';
       try {
         const { data: signed } = await supabaseAdmin.storage.from(GROUP_FILES_BUCKET).createSignedUrl(destinationPath, 60 * 60);
@@ -105,10 +101,10 @@ export async function POST(request: Request) {
 
       return NextResponse.json({
         file_id: inserted[0].file_id,
-        file_url: publicUrl, // Return signed URL for frontend
+        file_url: publicUrl, 
       });
     } else {
-      // Inline content path: use description as actual content
+   
       let insertedInline;
       try {
         insertedInline = await sql`

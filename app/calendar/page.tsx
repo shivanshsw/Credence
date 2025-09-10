@@ -36,14 +36,14 @@ export default function CalendarPage() {
       if (!res.ok) return
       const data = await res.json()
       setTasks(Array.isArray(data) ? data : [])
-      // If we successfully fetched with scope=all, mark admin
+      
       if (showAll) setIsAdmin(true)
     } finally {
       setLoading(false)
     }
   }
 
-  // Light admin probe without triggering 403 noise
+  
   useEffect(() => {
     const probe = async () => {
       try {
@@ -56,7 +56,7 @@ export default function CalendarPage() {
     probe()
   }, [])
 
-  // Remove Google Calendar integration
+
 
   const ordered = useMemo(() => {
     const ranked = [...tasks]

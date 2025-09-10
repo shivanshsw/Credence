@@ -3,17 +3,17 @@ import { session } from '@descope/nextjs-sdk/server';
 import { neon } from '@neondatabase/serverless';
 import { supabaseAdmin, GROUP_FILES_BUCKET } from '@/lib/supabase';
 
-// This initializes the Neon database client
+
 const sql = neon(process.env.DATABASE_URL!);
 
-// Define a type for our Group object for better type safety
+
 interface Group {
     id: string;
     name: string;
     invite_code?: string;
 }
 
-// Function to generate a unique invite code
+
 function generateInviteCode(): string {
     const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
     let result = '';
@@ -23,7 +23,7 @@ function generateInviteCode(): string {
     return result;
 }
 
-// GET: Function to fetch all groups for the logged-in user
+
 export async function GET() {
     const sessionInfo = await session();
 
@@ -35,7 +35,7 @@ export async function GET() {
         const descopeUserId = sessionInfo.token.sub;
         console.log(`🔍 Fetching groups for user: ${descopeUserId}`);
 
-        // First, let's check if the user exists in the database
+        
         const userCheck = await sql`
             SELECT id, email, name FROM users WHERE descope_user_id = ${descopeUserId}
         `;
@@ -49,7 +49,7 @@ export async function GET() {
         const userId = userCheck[0].id;
         console.log(`🔍 User ID: ${userId}`);
 
-        // Check group_members table for this user
+        
         const memberships = await sql`
             SELECT gm.group_id, gm.user_id, gm.role, g.name as group_name
             FROM group_members gm
@@ -58,7 +58,7 @@ export async function GET() {
         `;
         console.log(`🔍 Direct memberships query:`, memberships);
 
-        // Find all groups where the current user is a member
+        
         const groups = (await sql`
             SELECT g.id, g.name
             FROM groups g
@@ -75,7 +75,7 @@ export async function GET() {
     }
 }
 
-// POST: Function to create a new group
+
 export async function POST(request: Request) {
     const sessionInfo = await session();
 
@@ -91,9 +91,8 @@ export async function POST(request: Request) {
 
         const descopeUserId = sessionInfo.token.sub;
 
-        // --- CORRECTED SEQUENTIAL LOGIC ---
 
-        // 1. Get our application's internal user ID
+        
         const users = (await sql`
             SELECT id FROM users WHERE descope_user_id = ${descopeUserId}
         `) as { id: string }[];
@@ -103,7 +102,7 @@ export async function POST(request: Request) {
         }
         const userId = users[0].id;
 
-        // 2. Generate a unique invite code
+        
         let inviteCode: string = '';
         let isUnique = false;
         let attempts = 0;
@@ -124,20 +123,20 @@ export async function POST(request: Request) {
             throw new Error('Failed to generate unique invite code');
         }
 
-        // 3. Create the new group with invite code and return its details
+        
         let createdGroups: Group[];
         try {
             createdGroups = (await sql`
                 INSERT INTO groups (name, created_by, invite_code) VALUES (${name}, ${userId}, ${inviteCode}) RETURNING id, name, invite_code
             `) as Group[];
         } catch (error) {
-            // If invite_code column doesn't exist, try without it
+            
             if (error instanceof Error && error.message.includes('column "invite_code" does not exist')) {
                 console.warn('invite_code column not found, creating group without invite code');
                 createdGroups = (await sql`
                     INSERT INTO groups (name, created_by) VALUES (${name}, ${userId}) RETURNING id, name
                 `) as Group[];
-                // Add empty invite_code to match interface
+                
                 createdGroups[0] = { ...createdGroups[0], invite_code: '' };
             } else {
                 throw error;
@@ -145,12 +144,12 @@ export async function POST(request: Request) {
         }
         const newGroup = createdGroups[0];
 
-        // 4. Add the creator as the first member of the new group with the 'admin' role
+        
         await sql`
             INSERT INTO group_members (group_id, user_id, role) VALUES (${newGroup.id}, ${userId}, 'admin')
         `;
 
-        // 5. Create a placeholder folder in Supabase storage: group-<id>/
+        
         try {
             const folderKey = `group-${newGroup.id}/.keep`;
             await supabaseAdmin.storage.from(GROUP_FILES_BUCKET).upload(folderKey, new Blob([new Uint8Array()]), {
@@ -161,7 +160,7 @@ export async function POST(request: Request) {
             console.warn('Supabase folder create failed (non-fatal):', e);
         }
 
-        // --- END OF LOGIC ---
+        
 
         console.log(`✅ New group created: ${newGroup.name}`);
         return NextResponse.json(newGroup, { status: 201 });

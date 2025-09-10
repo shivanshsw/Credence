@@ -114,8 +114,7 @@ export function MembersManagement({ groupId, isAdmin }: MembersManagementProps) 
       setRoleChanges({});
       await fetchMembers();
       
-      // Refresh the page to update the auth context with new roles
-      // This ensures the chat system recognizes role changes immediately
+
       window.location.reload();
     } catch (error) {
       console.error('Failed to save changes:', error);

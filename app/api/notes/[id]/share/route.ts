@@ -7,7 +7,7 @@ import { rbacService } from '@/lib/rbac';
 
 const sql = neon(process.env.DATABASE_URL!);
 
-// POST: Share a note with another user
+
 export async function POST(request: Request, context: { params: Promise<{ id: string }> }) {
   const sessionInfo = await session();
   
@@ -54,8 +54,6 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
       return NextResponse.json({ error: 'No users found for provided emails', notFound }, { status: 404 });
     }
 
-    // Enforce same-group membership: resolve note group and ensure target users are members
-    // Share with all and mark note as shared (is_private=false). No group restriction.
     for (const sharedWithUserId of ids) {
       await notesService.shareNote({ noteId: id, sharedWithUserId, sharedByUserId: userId });
     }

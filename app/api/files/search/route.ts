@@ -19,7 +19,7 @@ export async function GET(request: Request) {
       return NextResponse.json({ error: 'group_id is required' }, { status: 400 });
     }
 
-    // Resolve user and verify membership
+    // Resolve user and verify membershipa
     const users = await sql`SELECT id FROM users WHERE descope_user_id = ${sessionInfo.token.sub}`;
     if (users.length === 0) {
       return NextResponse.json({ error: 'User not found' }, { status: 404 });

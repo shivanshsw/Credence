@@ -130,18 +130,18 @@ export class DescopeNotionSync {
 
   async handleNotionWebhook(payload: any): Promise<NotionSyncResult> {
     try {
-      // Process webhook payload from Notion
+      // Process webhook payload
       const { object, entry } = payload;
       
       if (object === 'page') {
-        // Handle page updates from Notion
+        
         for (const change of entry) {
           const pageId = change.id;
           const changes = change.changes;
           
           // Process each change
           for (const changeItem of changes) {
-            // Update local database based on Notion changes
+          
             console.log(`Processing change for page ${pageId}:`, changeItem);
           }
         }

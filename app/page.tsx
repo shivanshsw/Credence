@@ -11,7 +11,7 @@ import {ChatView} from "@/components/chat/chat-view"
 import { LoadingSpinner } from "@/components/ui/loading-spinner"
 
 export default function Page() {
-  // Get the state from our central 'brain', the auth context
+  
   const { loggedIn, loading, selectedGroupId } = useAuth()
   const search = useSearchParams()
   const router = useRouter()
@@ -22,7 +22,7 @@ export default function Page() {
     setIsClient(true)
   }, [])
 
-  // On the server, or while the auth state is loading, show a generic loading UI
+  
   if (!isClient || loading) {
     return (
         <AppShell>
@@ -36,19 +36,19 @@ export default function Page() {
     );
   }
 
-  // This function makes the rendering logic clear and easy to follow
+  
   const renderContent = () => {
-    // Priority 1: Handle special views from the URL, like 'security' or 'settings'
+    
     if (view === "security") return <SecurityPanel />;
     if (view === "settings") return <SettingsPanel />;
 
-    // Priority 2: If the user is logged in AND has selected a group, show the chat view
+
     if (loggedIn && selectedGroupId) return <ChatView />;
 
-    // Priority 3: If the user is logged in but has NOT selected a group, show the group selection screen
+    
     if (loggedIn && !selectedGroupId) return <GroupGate />;
 
-    // Default case: If none of the above are true, the user is not logged in. Show the login prompt.
+    
     return (
         <div className="relative flex h-[calc(100vh-120px)] flex-col place-items-center justify-center">
           <div className="rounded-md border border-neutral-800 bg-neutral-950 p-8 text-center shadow max-w-md w-full mx-4">

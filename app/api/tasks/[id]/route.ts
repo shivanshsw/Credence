@@ -7,7 +7,7 @@ import { rbacService } from '@/lib/rbac';
 
 const sql = neon(process.env.DATABASE_URL!);
 
-// GET: Get a specific task
+
 export async function GET(request: Request, { params }: { params: { id: string } }) {
   const sessionInfo = await session();
   
@@ -94,7 +94,7 @@ export async function PUT(request: Request, { params }: { params: { id: string }
   }
 }
 
-// DELETE: Delete a task
+
 export async function DELETE(request: Request, { params }: { params: { id: string } }) {
   const sessionInfo = await session();
   

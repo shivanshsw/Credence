@@ -23,8 +23,7 @@ const retryWithDelay = async <T,>(
         return retryWithDelay(operation, retries - 1, delay * 2); // Exponential backoff
     }
 };
-// ======================= POST =======================
-// This route should be for syncing the user to the database.
+
 export async function POST() {
     const sessionInfo = await session();
 
@@ -68,7 +67,7 @@ export async function POST() {
             console.log(`✅ User updated in database: ${name} (${email})`);
         }
 
-        // Verify the user was created/updated correctly
+     
         const verifyUsers = await sql`
             SELECT email, name FROM users WHERE descope_user_id = ${descopeUserId}
         `;

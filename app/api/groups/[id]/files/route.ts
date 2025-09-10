@@ -4,7 +4,7 @@ import { neon } from '@neondatabase/serverless';
 
 const sql = neon(process.env.DATABASE_URL!);
 
-// GET: List files for a group (basic pagination)
+// GET: List files for a group 
 export async function GET(
   request: Request,
   context: { params: Promise<{ id: string }> }
@@ -20,7 +20,7 @@ export async function GET(
     const groupId = id;
     const descopeUserId = sessionInfo.token.sub;
 
-    // Ensure requester is a member of the group
+    
     const users = await sql`
       SELECT id FROM users WHERE descope_user_id = ${descopeUserId}
     ` as { id: string }[];
@@ -53,7 +53,7 @@ export async function GET(
   }
 }
 
-// POST: Upload a file (multipart/form-data). Stores metadata + a temporary storage URL.
+
 export async function POST(
   request: Request,
   context: { params: Promise<{ id: string }> }
@@ -86,14 +86,13 @@ export async function POST(
     const file = formData.get('file') as unknown as File | null;
     if (!file) return NextResponse.json({ error: 'Missing file' }, { status: 400 });
 
-    // For now, we do not persist binary; we create a temporary blob URL using arrayBuffer
-    // In production, upload to S3/GCS and save the remote URL here.
+    
     const arrayBuffer = await file.arrayBuffer();
     const sizeBytes = arrayBuffer.byteLength;
     const fileName = (formData.get('file_name') as string) || (file as any).name || 'upload';
     const mimeType = (file as any).type || 'application/octet-stream';
 
-    // Temporary storage URL placeholder (not persistent). Replace with S3 later.
+    
     const storageUrl = `blob:temporary:${crypto.randomUUID()}`;
 
     const inserted = await sql`

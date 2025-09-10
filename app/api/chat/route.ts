@@ -6,7 +6,7 @@ import { geminiService, ChatContext } from '@/lib/gemini';
 import { supabaseAdmin, GROUP_FILES_BUCKET } from '@/lib/supabase';
 import { rbacService } from '@/lib/rbac';
 import { tasksService } from '@/lib/tasks';
-// Heavy parsers are dynamically imported only when needed
+
 
 const sql = neon(process.env.DATABASE_URL!);
 
@@ -38,10 +38,9 @@ export async function POST(request: Request) {
     // Get user permissions
     const userPermissions = await rbacService.getUserPermissions(userId);
     
-    // Get group-specific permissions
+    // Get group-specific permissions which are particularlly like individual for a group
     const groupPermissions = await rbacService.getUserGroupPermissions(userId, groupId);
     
-    // Determine effective role: prefer group role (e.g., creator/admin) over global user role
     let effectiveRole = userPermissions.role;
     try {
       const membership = await sql`
@@ -52,7 +51,7 @@ export async function POST(request: Request) {
       }
     } catch {}
 
-    // Combine permissions (with effective role)
+    // Combine the permissions
     const combinedPermissions = {
       ...userPermissions,
       role: effectiveRole,
@@ -60,7 +59,7 @@ export async function POST(request: Request) {
       customPermissionText: groupPermissions.customPermissionText
     };
 
-    // Helper: strict file access control → only admins/managers WITH files:read
+
     const canAccessFiles = (() => {
       const role = effectiveRole?.toLowerCase?.() || '';
       const basePerms = combinedPermissions.permissions || [];
@@ -73,7 +72,7 @@ export async function POST(request: Request) {
       return false;
     })();
 
-    // Get group name
+
     const groups = await sql`
       SELECT name FROM groups WHERE id = ${groupId}
     `;
@@ -82,26 +81,26 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: 'Group not found' }, { status: 404 });
     }
 
-    // TASK ASSIGNMENT DETECTION: Check if message contains task assignment patterns
+    
     const taskAssignmentPatterns = [
-      // Patterns for dates with brackets and no spaces (most specific first)
+      
       /assign:\s*([^:]+?)\s+to\s+all\s+role:\s*([^\s]+?)(?:\s+for\s+date\s*<([^>]+)>)?/i,
       /assign:\s*([^:]+?)\s+to\s+role:\s*([^\s]+?)(?:\s+for\s+date\s*<([^>]+)>)?/i,
       /assign\s+([^:]+?)\s+to\s+all\s+role\s+([^\s]+?)(?:\s+for\s+date\s*<([^>]+)>)?/i,
       /assign\s+([^:]+?)\s+to\s+role\s+([^\s]+?)(?:\s+for\s+date\s*<([^>]+)>)?/i,
-      // Original patterns
+      
       /assign:\s*([^:]+?)\s+to\s+role:\s*([^\s]+?)(?:\s+for\s+date\s+([^\s]+))?/i,
       /assign\s+task:\s*([^:]+?)\s+to\s+all\s+role:\s*([^\s]+?)(?:\s+for\s+date\s+([^\s]+))?/i,
       /assign:\s*([^:]+?)\s+to\s+role:\s*([^\s]+?)(?:\s+for\s+([^\s]+))?/i,
       /task:\s*([^:]+?)\s+to\s+role:\s*([^\s]+?)(?:\s+for\s+date\s+([^\s]+))?/i,
       /assign\s+([^:]+?)\s+to\s+role\s+([^\s]+?)(?:\s+for\s+date\s+([^\s]+))?/i,
       /assign\s+([^:]+?)\s+to\s+all\s+role\s+([^\s]+?)(?:\s+for\s+date\s+([^\s]+))?/i,
-      // Additional patterns for more flexibility
+      
       /assign\s+([^:]+?)\s+to\s+([^\s]+?)(?:\s+for\s+date\s+([^\s]+))?/i,
       /assign:\s*([^:]+?)\s+to\s+([^\s]+?)(?:\s+for\s+([^\s]+))?/i,
     ];
 
-    // Enhanced role normalization with fuzzy matching
+    
     const normalizeRole = (roleName) => {
       const role = roleName.toLowerCase().trim();
       const roleMap = {
@@ -113,20 +112,20 @@ export async function POST(request: Request) {
         'finance-manager': 'finance-manager', 'financemanager': 'finance-manager', 'finance_manager': 'finance-manager',
       };
       
-      // Direct match first
+      
       if (roleMap[role]) return roleMap[role];
       
-      // Fuzzy matching for partial matches
+      
       for (const [key, value] of Object.entries(roleMap)) {
         if (role.includes(key) || key.includes(role)) {
           return value;
         }
       }
       
-      return role; // Return original if no match found
+      return role; 
     };
 
-    // Enhanced date parsing with multiple formats
+   
     const parseDate = (dateStr) => {
       if (!dateStr) {
         console.log('parseDate: No date string provided');
@@ -134,11 +133,11 @@ export async function POST(request: Request) {
       }
       
       try {
-        // Clean the date string - remove brackets and extra spaces
+        
         let cleanDate = dateStr.replace(/[<>]/g, '').trim();
         console.log('parseDate: Cleaned date string:', cleanDate);
         
-        // Handle DD-MM-YYYY format
+        
         if (cleanDate.includes('-') && cleanDate.split('-')[0].length <= 2) {
           const parts = cleanDate.split('-');
           console.log('parseDate: DD-MM-YYYY parts:', parts);
@@ -157,7 +156,7 @@ export async function POST(request: Request) {
           }
         }
         
-        // Handle YYYY-MM-DD format
+        
         const date = new Date(cleanDate);
         if (!isNaN(date.getTime())) {
           const result = date.toISOString();
@@ -165,11 +164,11 @@ export async function POST(request: Request) {
           return result;
         }
         
-        // Try parsing as various date formats
+        
         const formats = [
           cleanDate, // Original
-          cleanDate.replace(/\//g, '-'), // Convert slashes to dashes
-          cleanDate.replace(/\./g, '-'), // Convert dots to dashes
+          cleanDate.replace(/\//g, '-'), 
+          cleanDate.replace(/\./g, '-'), 
         ];
         
         for (const format of formats) {
@@ -204,22 +203,22 @@ export async function POST(request: Request) {
         const roleName = match[2].trim();
         const dateStr = match[3]?.trim();
 
-        // Use enhanced role normalization
+        
         const normalizedRole = normalizeRole(roleName);
 
-        // Use enhanced date parsing
+      
         let dueDate = parseDate(dateStr);
         
-        // If no date was parsed from the specific group, try to find any date in the message
+        
         if (!dueDate) {
           console.log('parseDate: No date found in group, searching entire message...');
           const datePatterns = [
-            /<(\d{4}-\d{2}-\d{2})>/g,  // <2024-09-15>
-            /(\d{4}-\d{2}-\d{2})/g,    // 2024-09-15
-            /<(\d{2}-\d{2}-\d{4})>/g,  // <15-09-2024>
-            /(\d{2}-\d{2}-\d{4})/g,    // 15-09-2024
-            /<(\d{4}\/\d{2}\/\d{2})>/g, // <2024/09/15>
-            /(\d{4}\/\d{2}\/\d{2})/g,   // 2024/09/15
+            /<(\d{4}-\d{2}-\d{2})>/g, 
+            /(\d{4}-\d{2}-\d{2})/g,   
+            /<(\d{2}-\d{2}-\d{4})>/g, 
+            /(\d{2}-\d{2}-\d{4})/g,   
+            /<(\d{4}\/\d{2}\/\d{2})>/g
+            /(\d{4}\/\d{2}\/\d{2})/g, 
           ];
           
           for (const pattern of datePatterns) {
@@ -235,13 +234,13 @@ export async function POST(request: Request) {
           }
         }
         
-        // If still no date was parsed, use current date as fallback
+        
         if (!dueDate) {
           dueDate = new Date().toISOString();
           console.log('parseDate: Using current date as fallback:', dueDate);
         }
         
-        // Debug logging
+        
         console.log('Date parsing debug:', {
           originalDateStr: dateStr,
           parsedDate: dueDate,
@@ -262,7 +261,7 @@ export async function POST(request: Request) {
       }
     }
 
-    // Also check if the message contains a COMMAND format from Gemini
+    
     if (!detectedTaskAssignment && message.includes('COMMAND:')) {
       try {
         const commandMatch = message.match(/COMMAND:\s*(\{.*\})/s);
@@ -287,14 +286,14 @@ export async function POST(request: Request) {
       }
     }
 
-    // If task assignment detected, process it directly
+   
     if (detectedTaskAssignment) {
       console.log('Processing task assignment:', detectedTaskAssignment);
       
       try {
         const assignedUserIds: string[] = [];
 
-        // Assign to all group members
+       
         if (detectedTaskAssignment.assignToAllMembers) {
           const members = await sql`
             SELECT user_id FROM group_members WHERE group_id = ${detectedTaskAssignment.groupId}
@@ -302,14 +301,14 @@ export async function POST(request: Request) {
           assignedUserIds.push(...members.map(m => m.user_id));
         }
 
-        // Assign to role within group
+       
         if (detectedTaskAssignment.assignToRole) {
-          // Try exact match first
+          
           let roleMembers = await sql`
             SELECT user_id FROM group_members WHERE group_id = ${detectedTaskAssignment.groupId} AND role = ${detectedTaskAssignment.assignToRole}
           ` as { user_id: string }[];
           
-          // If no exact match, try fuzzy matching with common role variations
+          
           if (roleMembers.length === 0) {
             const roleVariations = [];
             const role = detectedTaskAssignment.assignToRole.toLowerCase();
@@ -328,7 +327,7 @@ export async function POST(request: Request) {
               roleVariations.push('finance-manager', 'financemanager', 'finance_manager');
             }
             
-            // Try each variation
+            
             for (const variation of roleVariations) {
               roleMembers = await sql`
                 SELECT user_id FROM group_members WHERE group_id = ${detectedTaskAssignment.groupId} AND role = ${variation}
@@ -341,10 +340,10 @@ export async function POST(request: Request) {
           console.log(`Found ${roleMembers.length} users with role: ${detectedTaskAssignment.assignToRole}`);
         }
 
-        // De-duplicate
+        
         const uniqueUserIds = Array.from(new Set(assignedUserIds.filter(Boolean)));
 
-        // Create tasks for each assigned user
+        
         for (const assignedUserId of uniqueUserIds) {
           await tasksService.createTask({
             title: detectedTaskAssignment.title,
@@ -357,7 +356,7 @@ export async function POST(request: Request) {
           });
         }
 
-        // Return success response
+        
         let responseMessage = `✅ I have added "${detectedTaskAssignment.title}" for all ${detectedTaskAssignment.assignToRole} for the date ${detectedTaskAssignment.dueDate ? new Date(detectedTaskAssignment.dueDate).toLocaleDateString() : 'no specific date'}.`;
         
         if (detectedTaskAssignment.assignToAllMembers) {
@@ -380,7 +379,7 @@ export async function POST(request: Request) {
       }
     }
 
-    // Get recent chat messages for context
+
     let recentMessages: Array<{ role: 'user' | 'assistant'; content: string }> = [];
     try {
       recentMessages = await sql`
@@ -400,7 +399,7 @@ export async function POST(request: Request) {
       recentMessages = [];
     }
 
-    // Fetch tasks snapshot for context (self by default; admin can see all)
+    
     let tasksForContext: any[] = [];
     try {
       const isAdmin = await rbacService.userHasRole(userId, 'admin');
@@ -409,7 +408,7 @@ export async function POST(request: Request) {
       tasksForContext = [];
     }
 
-    // Fetch uploaded files metadata for context (titles) – gated by permissions
+    
     let filesForContext: any[] = [];
     try {
       if (canAccessFiles) {
@@ -427,7 +426,7 @@ export async function POST(request: Request) {
       filesForContext = [];
     }
 
-    // Helpers
+    
     const downloadFile = async (path: string) => {
       console.log('[chat] downloadFile: attempting to download file from path:', path);
       const { data, error } = await supabaseAdmin.storage
@@ -449,11 +448,11 @@ export async function POST(request: Request) {
       try {
         console.log('[chat] uploadFileToGemini: uploading file to Gemini', { fileName, mimeType: mimeType || fileBlob.type });
         
-        // Convert blob to buffer for Gemini API
+        
         const arrayBuffer = await fileBlob.arrayBuffer();
         const buffer = Buffer.from(arrayBuffer);
         
-        // Use the existing GeminiService uploadFileToGemini method
+        
         const result = await geminiService.uploadFileToGemini({
           data: buffer,
           mimeType: mimeType || fileBlob.type || 'application/octet-stream',
@@ -552,26 +551,25 @@ export async function POST(request: Request) {
         return url;
       }
 
-      // Extract storage path from signed URL
-      // Format: https://xyz.supabase.co/storage/v1/object/sign/bucket-name/path?token=...
+      
       try {
         const urlObj = new URL(url);
         const pathParts = urlObj.pathname.split('/');
         const signIndex = pathParts.indexOf('sign');
         if (signIndex !== -1 && pathParts.length > signIndex + 2) {
-          // Skip 'sign' and bucket name, get the rest
+         
           return pathParts.slice(signIndex + 2).join('/');
         }
       } catch (e) {
         console.warn('[chat] Failed to extract storage path from URL:', url);
       }
 
-      // Fallback: return the original URL and hope it works
+      // Fallback: return the original URL 
       return url;
     };
 
 
-    // Build base context (no automatic RAG). We'll only inject summaries for explicit filename intents below.
+    
     const context: ChatContext = {
       groupId,
       groupName: groups[0].name,
@@ -582,13 +580,13 @@ export async function POST(request: Request) {
       ragSnippets: []
     };
 
-    // Detect assignment intent keywords and let LLM structure it, instead of processing directly
+    
     const intentAssign = /(\bassign\b|\bschedule\b|\bdelegate\b|\bcreate task\b|\badd task\b)/i.test(message);
     if (intentAssign) {
-      // Proceed to LLM with context; it will return COMMAND JSON when confident
+      
     }
 
-    // Handle explicit command: file: <filename> (upload to Gemini and use fileData)
+
     let finalMessage = message;
     let augmentedContext = { ...context } as ChatContext;
     const fileCmdMatch = /file:\s*("[^"]+"|\S+)/i.exec(message);
@@ -608,7 +606,7 @@ export async function POST(request: Request) {
         .trim();
       console.log('[chat] file: command detected', { requested });
 
-      // Inline content short-circuit: use content_text if available
+      
       try {
         const inline = await sql`
           SELECT title, content_text FROM uploaded_files
@@ -621,14 +619,14 @@ export async function POST(request: Request) {
         if (inline.length) {
           const text = (inline[0].content_text || '').toString();
           if (text.trim()) {
-            // Provide the inline text as context and proceed to normal answer generation
+            
             const chunks = chunkText(text, 200 * 1024);
             augmentedContext = {
               ...augmentedContext,
               ragSnippets: [...(augmentedContext.ragSnippets || []), ...chunks.map((c, i) => ({ fileName: `${inline[0].title} (inline ${i+1})`, snippet: c }))]
             };
             finalMessage = message;
-            // Skip storage path branch by jumping to response generation below
+            
             const aiResponse = await geminiService.generateChatResponse(finalMessage, augmentedContext);
             return NextResponse.json({
               response: aiResponse.response,
@@ -639,7 +637,7 @@ export async function POST(request: Request) {
         }
       } catch {}
 
-      // Try with storage_path first, fallback to file_url if column doesn't exist
+      
       let candidates: { title: string; storage_path: string; mime_type?: string }[];
       try {
         candidates = await sql`
@@ -671,7 +669,7 @@ export async function POST(request: Request) {
     )
   ` as { title: string; file_url: string }[];
 
-        // Convert URLs to storage paths
+        
         candidates = fallbackCandidates.map(f => ({
           title: f.title,
           storage_path: extractStoragePathFromUrl(f.file_url),
@@ -748,7 +746,7 @@ export async function POST(request: Request) {
       }
     }
 
-    // Auto-detect filename intent like: summarize "name", read name.pdf, show test_file, etc. (summarize & inject summary)
+    
     if (finalMessage === message) {
       const quoted = /(?:summarize|read|open|show|analy(?:se|ze)|review)\s+"([^"]{1,200})"/i.exec(message);
       const withExt = /\b([\w\- .]{1,160}\.(?:txt|pdf|docx|xlsx|xls|csv|json|md))\b/i.exec(message);

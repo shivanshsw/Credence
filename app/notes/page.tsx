@@ -41,7 +41,7 @@ export default function NotesPage() {
   const [addToGroupOpen, setAddToGroupOpen] = useState(false)
   const [targetGroupId, setTargetGroupId] = useState<string>("")
 
-  // Form state for creating/editing notes
+  
   const [formData, setFormData] = useState({
     title: "",
     content: "",

@@ -53,7 +53,7 @@ export default function TasksPage() {
     fetchTasks()
   }, [selectedGroup])
 
-  // For individual tasks, we still load groups so user can optionally attach to a group later; default to Personal via API
+  
   useEffect(() => {
     const loadGroups = async () => {
       try {
@@ -90,7 +90,7 @@ export default function TasksPage() {
   }
 
   const createTask = async () => {
-    // createGroupId optional; API will fallback to personal group
+    
 
     try {
       const response = await fetch('/api/tasks', {

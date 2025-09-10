@@ -146,7 +146,7 @@ export function GroupAdminPanel({ groupId, isAdmin, isOpen = false, onToggle }: 
     return null;
   }
 
-  // Render nothing when closed; opened via external button
+ 
   if (!isOpen) return null;
 
   if (loading) {

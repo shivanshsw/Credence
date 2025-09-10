@@ -7,7 +7,7 @@ import { rbacService } from '@/lib/rbac';
 
 const sql = neon(process.env.DATABASE_URL!);
 
-// GET: Fetch user's tasks
+
 export async function GET(request: Request) {
   const sessionInfo = await session();
   

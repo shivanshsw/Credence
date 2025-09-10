@@ -7,7 +7,7 @@ import { rbacService } from '@/lib/rbac';
 
 const sql = neon(process.env.DATABASE_URL!);
 
-// GET: Get a specific note
+
 export async function GET(request: Request, { params }: { params: { id: string } }) {
   const sessionInfo = await session();
   
@@ -58,7 +58,6 @@ export async function PUT(request: Request, { params }: { params: { id: string }
   try {
     const { title, content, isPrivate } = await request.json();
 
-    // Get user ID
     const users = await sql`
       SELECT id FROM users WHERE descope_user_id = ${sessionInfo.token.sub}
     `;
@@ -69,7 +68,7 @@ export async function PUT(request: Request, { params }: { params: { id: string }
     
     const userId = users[0].id;
 
-    // Check permissions
+    
     const hasReadPermission = await rbacService.hasPermission(userId, 'notes:read');
     if (!hasReadPermission) {
       return NextResponse.json({ error: 'Insufficient permissions' }, { status: 403 });

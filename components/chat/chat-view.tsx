@@ -130,7 +130,7 @@ export function ChatView() {
         }
     };
 
-    // reset greeting when selectedGroup changes
+    
     useEffect(() => {
         setMessages([
             {

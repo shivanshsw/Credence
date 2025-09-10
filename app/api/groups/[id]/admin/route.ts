@@ -6,7 +6,7 @@ import { rbacService } from '@/lib/rbac';
 
 const sql = neon(process.env.DATABASE_URL!);
 
-// GET: Get group admin data (permissions, roles, custom permissions)
+// GET: Get group admin data 
 export async function GET(
   request: Request,
   context: { params: Promise<{ id: string }> }
@@ -22,7 +22,7 @@ export async function GET(
     const groupId = id;
     const descopeUserId = sessionInfo.token.sub;
 
-    // Get user's internal ID
+    // Get user's ID
     const users = await sql`
       SELECT id FROM users WHERE descope_user_id = ${descopeUserId}
     ` as { id: string }[];
